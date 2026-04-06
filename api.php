@@ -245,6 +245,32 @@ function autoMigrate(): void {
             }
         }
 
+        // ── Drop legacy FK woning_id → woningen (oud schema) ────────────────
+        try {
+            $legFKs = db()->prepare(
+                "SELECT DISTINCT tc.CONSTRAINT_NAME
+                 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                 JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                   ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                  AND tc.TABLE_SCHEMA    = kcu.TABLE_SCHEMA
+                  AND tc.TABLE_NAME      = kcu.TABLE_NAME
+                 WHERE tc.TABLE_SCHEMA      = ?
+                   AND tc.TABLE_NAME        = 'visits'
+                   AND tc.CONSTRAINT_TYPE   = 'FOREIGN KEY'
+                   AND (kcu.COLUMN_NAME             = 'woning_id'
+                     OR kcu.REFERENCED_TABLE_NAME   = 'woningen')"
+            );
+            $legFKs->execute([$dbName]);
+            foreach ($legFKs->fetchAll(PDO::FETCH_COLUMN) as $fkName) {
+                try { db()->exec("ALTER TABLE visits DROP FOREIGN KEY `$fkName`"); } catch (Throwable $e) {}
+            }
+            if (in_array('woning_id', $visitCols)) {
+                db()->exec("ALTER TABLE visits MODIFY COLUMN woning_id INT DEFAULT NULL");
+            }
+        } catch (Throwable $e) {
+            error_log("PoolCheck migrate drop legacy FK: " . $e->getMessage());
+        }
+
         // ── Auto-assign codes aan bestaande records zonder code ───────────────
         $usersNoCodes = db()->query("SELECT id FROM users WHERE code IS NULL ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
         foreach ($usersNoCodes as $uid) {

@@ -40,18 +40,22 @@ textarea{resize:vertical;min-height:70px;font-size:14px}
 .photo-zone:hover{border-color:var(--g)}
 .photo-zone input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .photo-preview{width:100%;border-radius:8px;margin-top:8px;max-height:200px;object-fit:cover}
-/* AI strip */
-.strip-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:1rem}
+/* Metingen slider UI */
+.strip-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:.5rem}
 .strip-param{background:#fafaf8;border:1px solid var(--bd);border-radius:10px;padding:.75rem;text-align:center}
-.strip-param-label{font-size:11px;font-weight:700;color:var(--t2);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em}
-.strip-crops{display:flex;gap:6px;justify-content:center;margin-bottom:6px;align-items:flex-end}
-.strip-crop{display:flex;flex-direction:column;align-items:center;gap:3px}
-.strip-crop canvas{border-radius:5px;border:1.5px solid var(--bd);width:56px;height:40px}
-.strip-crop span{font-size:10px;color:var(--t3)}
-.strip-param-val{font-size:18px;font-weight:700;color:var(--gd);margin-bottom:4px}
-.strip-reasoning{font-size:10px;color:var(--t3);line-height:1.4;margin-bottom:6px}
+.strip-param-label{font-size:11px;font-weight:700;color:var(--t2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em}
+.pad-crop-wrap{display:none;margin-bottom:6px;text-align:center}
+.pad-crop-wrap canvas{border-radius:5px;border:1.5px solid var(--bd);width:60px;height:42px;display:block;margin:0 auto 2px}
+.pad-crop-wrap span{font-size:9px;color:var(--t3);display:block}
+.strip-param-val{font-size:20px;font-weight:700;color:var(--gd);margin-bottom:5px;line-height:1}
+.ref-cells{display:flex;border-radius:5px;overflow:hidden;margin-bottom:5px;height:30px;border:1px solid var(--bd)}
+.ref-cell{flex:1;display:flex;align-items:flex-end;justify-content:center;padding-bottom:2px;border-right:1px solid rgba(255,255,255,.35)}
+.ref-cell:last-child{border-right:none}
+.ref-cell-val{font-size:7.5px;font-weight:700;line-height:1}
+.strip-reasoning{font-size:9.5px;color:var(--t3);line-height:1.4;margin-top:3px;min-height:0}
 input[type=range]{width:100%;height:4px;-webkit-appearance:none;appearance:none;background:linear-gradient(to right,var(--g) 50%,var(--bd) 50%);border-radius:2px;outline:none;padding:0;border:none;box-shadow:none}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--g);cursor:pointer;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.2)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:var(--g);cursor:pointer;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.vol-display{font-size:14px;color:var(--t2);padding:10px 13px;background:#f5f5f3;border-radius:var(--rs);border:1.5px solid var(--bd)}
 /* Advice */
 .advice{border-radius:10px;padding:.9rem 1rem;margin-bottom:.6rem;border-left:4px solid transparent}
 .advice.ok  {background:var(--ok-bg); border-color:var(--ok)}
@@ -280,6 +284,7 @@ function switchTab(btn) {
 
 // ── Formulier ─────────────────────────────────────────────────
 function buildForm() {
+  const vol = (ZWEMBAD.volume_liters || 40000).toLocaleString('nl-NL');
   document.getElementById('v-form').innerHTML = `
     <div class="card">
       <h2>Teststrip analyseren</h2>
@@ -294,21 +299,20 @@ function buildForm() {
           <div style="font-size:12px;color:var(--t3);margin-top:2px">Teststrip + kleurenkaart naast elkaar</div>
         </div>
       </div>
-      <div id="ai-out" style="margin-top:1rem"></div>
+      <div id="ai-status" style="margin-top:.5rem"></div>
     </div>
 
     <div class="card">
-      <h2>Metingen</h2>
-      <div class="row2">
-        <div class="fg"><label>pH</label><input type="number" id="f-ph"  step="0.1" min="6" max="9"   placeholder="7.4"></div>
-        <div class="fg"><label>Chloor (ppm)</label><input type="number" id="f-cl"  step="0.1" min="0" max="10"  placeholder="1.5"></div>
-      </div>
-      <div class="row2">
-        <div class="fg"><label>Alkaliniteit (ppm)</label><input type="number" id="f-alk" step="1"   min="0" max="300" placeholder="100"></div>
-        <div class="fg"><label>Stabilizer (ppm)</label><input type="number" id="f-stab" step="1"   min="0" max="300" placeholder="40"></div>
-      </div>
-      <div class="fg"><label>Volume water (liter)</label>
-        <input type="number" id="f-vol" value="${ZWEMBAD.volume_liters || 40000}">
+      <h2>Metingen <span id="ai-badge" style="display:none;font-size:11px;font-weight:400;color:var(--g)">✓ via AI — schuif om bij te stellen</span></h2>
+      <div class="strip-grid">${PARAMS.map(p => paramCard(p)).join('')}</div>
+      <input type="hidden" id="f-ph"   value="${PARAMS[0].def}">
+      <input type="hidden" id="f-cl"   value="${PARAMS[1].def}">
+      <input type="hidden" id="f-alk"  value="${PARAMS[2].def}">
+      <input type="hidden" id="f-stab" value="${PARAMS[3].def}">
+      <input type="hidden" id="f-vol"  value="${ZWEMBAD.volume_liters||40000}">
+      <div class="fg" style="margin-top:.75rem">
+        <label>Volume water</label>
+        <div class="vol-display">${vol} liter</div>
       </div>
       <div class="fg"><label>Notities</label><textarea id="f-notes" placeholder="Bijzonderheden..."></textarea></div>
     </div>
@@ -330,19 +334,98 @@ function buildForm() {
     <button class="btn" id="save-btn" onclick="doSave()">Bezoek opslaan</button>`;
 }
 
+// ── Parameter definities + referentie-kleuren ────────────────
+// Gebaseerd op Aquachek 4-in-1 kleurenkaart
+const PARAMS = [
+  { key:'ph',         label:'pH',          fid:'f-ph',   min:6.2, max:8.4, step:.1, dec:1, def:7.4,
+    cells:[
+      {v:6.2,c:'#FF9800',t:'#333'},{v:6.8,c:'#E07030',t:'#fff'},
+      {v:7.2,c:'#D4753A',t:'#fff'},{v:7.6,c:'#C86830',t:'#fff'},
+      {v:7.8,c:'#B05828',t:'#fff'},{v:8.4,c:'#8B3820',t:'#fff'}
+    ]},
+  { key:'chlorine',   label:'Chloor (ppm)',fid:'f-cl',   min:0,   max:10,  step:.5, dec:1, def:1.5,
+    cells:[
+      {v:0,  c:'#FFFFFF',t:'#999'},{v:0.5,c:'#FFDEDE',t:'#333'},
+      {v:1,  c:'#FFAAAA',t:'#333'},{v:3,  c:'#FF7777',t:'#fff'},
+      {v:5,  c:'#EE4488',t:'#fff'},{v:10, c:'#BB0044',t:'#fff'}
+    ]},
+  { key:'alkalinity', label:'ALK. (ppm)',  fid:'f-alk',  min:0,   max:240, step:1,  dec:0, def:100,
+    cells:[
+      {v:0,  c:'#E8E820',t:'#333'},{v:40, c:'#B0B820',t:'#333'},
+      {v:80, c:'#7A8A10',t:'#fff'},{v:120,c:'#406820',t:'#fff'},
+      {v:180,c:'#2A5010',t:'#fff'},{v:240,c:'#1A3808',t:'#fff'}
+    ]},
+  { key:'stabilizer', label:'Stabilizer',  fid:'f-stab', min:0,   max:300, step:1,  dec:0, def:50,
+    cells:[
+      {v:0,  c:'#F8F8FF',t:'#999'},{v:30, c:'#EED8F8',t:'#333'},
+      {v:50, c:'#D8B0EE',t:'#333'},{v:100,c:'#B070D8',t:'#fff'},
+      {v:150,c:'#8840B0',t:'#fff'},{v:300,c:'#4C1878',t:'#fff'}
+    ]},
+];
+
+function paramCard(p) {
+  const v   = p.def;
+  const pct = ((v - p.min) / (p.max - p.min) * 100).toFixed(1);
+  const cells = p.cells.map(c =>
+    `<div class="ref-cell" style="background:${c.c}" title="${c.v}">
+       <span class="ref-cell-val" style="color:${c.t}">${c.v}</span>
+     </div>`
+  ).join('');
+  return `<div class="strip-param">
+    <div class="strip-param-label">${p.label}</div>
+    <div class="pad-crop-wrap" id="pw-${p.key}">
+      <canvas id="cp-${p.key}" width="60" height="42"></canvas>
+      <span>Jouw strip</span>
+    </div>
+    <div class="strip-param-val" id="vv-${p.key}">${v.toFixed(p.dec)}</div>
+    <div class="ref-cells">${cells}</div>
+    <input type="range" id="sl-${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${v}"
+      style="background:linear-gradient(to right,var(--g) ${pct}%,var(--bd) ${pct}%)"
+      oninput="onSlider('${p.key}',${p.dec},'${p.fid}')">
+    <div class="strip-reasoning" id="rz-${p.key}"></div>
+  </div>`;
+}
+
+function applyAIToSliders(d) {
+  document.getElementById('ai-badge').style.display = 'inline';
+  PARAMS.forEach(p => {
+    const r = d[p.key];
+    if (!r) return;
+    const v = r.value;
+    // Slider + waarde
+    const sl = document.getElementById('sl-' + p.key);
+    if (sl) {
+      sl.value = v;
+      const pct = ((v - parseFloat(sl.min)) / (parseFloat(sl.max) - parseFloat(sl.min)) * 100).toFixed(1);
+      sl.style.background = `linear-gradient(to right,var(--g) ${pct}%,var(--bd) ${pct}%)`;
+    }
+    const vd = document.getElementById('vv-' + p.key);
+    if (vd) vd.textContent = v.toFixed(p.dec);
+    setVal(p.fid, v.toFixed(p.dec));
+    // Redenering
+    const rz = document.getElementById('rz-' + p.key);
+    if (rz) rz.textContent = r.reasoning || '';
+    // Toon strip-pad crop
+    const pw = document.getElementById('pw-' + p.key);
+    if (pw) pw.style.display = 'block';
+  });
+  // Teken crops nadat AI_IMG geladen is
+  PARAMS.forEach(p => doCrop(p.key));
+}
+
 // ── Strip foto + AI ───────────────────────────────────────────
 async function onStripPhoto(input) {
   const file = input.files[0];
   if (!file) return;
-  const inner = document.getElementById('strip-inner');
-  inner.innerHTML = '<div class="sp"></div><div style="font-size:12px;color:var(--t2);margin-top:6px">Uploaden...</div>';
+  const inner  = document.getElementById('strip-inner');
+  const status = document.getElementById('ai-status');
+  inner.innerHTML  = '<div class="sp"></div><div style="font-size:12px;color:var(--t2);margin-top:6px">Uploaden...</div>';
+  status.innerHTML = '';
   try {
     const url = await uploadFile(file);
     extraPhotos.strip = url;
     inner.innerHTML = `<img src="${url}" class="photo-preview">`;
-
-    const aiOut = document.getElementById('ai-out');
-    aiOut.innerHTML = '<div class="loading-block"><div class="sp"></div><p style="margin-top:8px">AI analyseert strip...</p></div>';
+    status.innerHTML = '<div class="loading-block"><div class="sp"></div><p style="margin-top:6px;font-size:13px">AI analyseert strip...</p></div>';
 
     const b64 = await toB64(file);
     const d   = await call('ai_strip', 'POST', { image: b64, type: file.type });
@@ -352,53 +435,15 @@ async function onStripPhoto(input) {
     AI_IMG.src = url;
     await new Promise(r => { AI_IMG.onload = r; AI_IMG.onerror = r; });
 
-    renderAI(aiOut);
-    // Vul formulier in
-    if (d.ph)         setVal('f-ph',   d.ph.value);
-    if (d.chlorine)   setVal('f-cl',   d.chlorine.value);
-    if (d.alkalinity) setVal('f-alk',  d.alkalinity.value);
-    if (d.stabilizer) setVal('f-stab', d.stabilizer.value);
+    status.innerHTML = '';
+    applyAIToSliders(d);
   } catch(e) {
-    inner.innerHTML = `<div style="color:var(--bad);font-size:13px">Analyseren mislukt: ${esc(e.message)}</div>`;
-    document.getElementById('ai-out').innerHTML = '';
+    inner.innerHTML  = `<div style="color:var(--bad);font-size:13px">Analyseren mislukt: ${esc(e.message)}</div>`;
+    status.innerHTML = '';
   }
 }
 
 function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
-
-function renderAI(el) {
-  const params = [
-    { key:'ph',         label:'pH',          fid:'f-ph',   min:6,   max:9,   step:.1, dec:1 },
-    { key:'chlorine',   label:'Chloor (ppm)',fid:'f-cl',   min:0,   max:10,  step:.1, dec:1 },
-    { key:'alkalinity', label:'Alk. (ppm)',  fid:'f-alk',  min:0,   max:300, step:1,  dec:0 },
-    { key:'stabilizer', label:'Stabilizer',  fid:'f-stab', min:0,   max:200, step:1,  dec:0 },
-  ];
-  el.innerHTML = `
-    <div style="font-size:13px;font-weight:600;color:var(--gd);margin-bottom:8px">AI-resultaat — controleer en pas aan indien nodig</div>
-    <div class="strip-grid">${params.map(p => paramCard(p)).join('')}</div>
-    <div style="font-size:11px;color:var(--t3);text-align:center;margin-bottom:4px">Schuif de slider om een waarde bij te stellen</div>`;
-  params.forEach(p => doCrop(p.key));
-}
-
-function paramCard(p) {
-  const r = AI_RESULT?.[p.key];
-  if (!r) return '';
-  const v   = r.value;
-  const pct = Math.round((v - p.min) / (p.max - p.min) * 100);
-  return `<div class="strip-param">
-    <div class="strip-param-label">${p.label}</div>
-    <div class="strip-crops">
-      <div class="strip-crop"><canvas id="cp-${p.key}" width="56" height="40"></canvas><span>Strip</span></div>
-      <div style="font-size:14px;color:var(--t3);align-self:center">↔</div>
-      <div class="strip-crop"><canvas id="cr-${p.key}" width="56" height="40"></canvas><span>Referentie</span></div>
-    </div>
-    <div class="strip-param-val" id="vv-${p.key}">${typeof v==='number'?v.toFixed(p.dec):v}</div>
-    <div class="strip-reasoning">${esc(r.reasoning||'')}</div>
-    <input type="range" id="sl-${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${v}"
-      style="background:linear-gradient(to right,var(--g) ${pct}%,var(--bd) ${pct}%)"
-      oninput="onSlider('${p.key}',${p.dec},'${p.fid}')">
-  </div>`;
-}
 
 function onSlider(key, dec, fid) {
   const sl  = document.getElementById('sl-' + key);
@@ -412,9 +457,8 @@ function onSlider(key, dec, fid) {
 function doCrop(key) {
   if (!AI_IMG?.complete || !AI_RESULT) return;
   const r = AI_RESULT[key];
-  if (!r) return;
+  if (!r?.pad_bbox) return;
   cropCanvas('cp-' + key, r.pad_bbox);
-  cropCanvas('cr-' + key, r.ref_bbox);
 }
 
 function cropCanvas(id, bbox) {
