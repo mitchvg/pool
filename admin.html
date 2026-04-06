@@ -187,6 +187,15 @@ function drawDash() {
     <div class="stat"><div class="stat-v">${V.length}</div><div class="stat-l">Totaal bezoeken</div></div>
     <div class="stat"><div class="stat-v">${wk}</div><div class="stat-l">Bezoeken afgelopen week</div></div>`;
   document.getElementById('rc').innerHTML = visitTable(V.slice(0, 10));
+  // Load version info
+  call('app_status').then(s => {
+    const match = s.match;
+    const badge = match
+      ? `<span style="background:#eaf3de;color:#2d6a4f;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">✓ Versie ${s.file_version} — up to date</span>`
+      : `<span style="background:#fcebeb;color:#8b1c1c;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">⚠ Bestanden v${s.file_version} — Database v${s.db_version||'?'} — Mismatch!</span>`;
+    const info = `<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">${badge}<span style="font-size:12px;color:var(--t3)">Laatste deploy: ${s.last_deploy||'onbekend'}</span></div>`;
+    document.getElementById('stats').insertAdjacentHTML('beforebegin', info);
+  }).catch(()=>{});
 }
 
 // ─── WONINGEN ──────────────────────────────────────

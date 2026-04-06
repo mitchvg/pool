@@ -23,6 +23,7 @@ define('UPLOAD_URL',    BASE_URL . '/uploads/');
 
 // Claude Vision: vul in na console.anthropic.com
 define('CLAUDE_API_KEY', '');
+define('APP_VERSION',   '4.6');  // Moet matchen met deploy.php
 
 session_start();
 header('Content-Type: application/json; charset=utf-8');
@@ -224,7 +225,9 @@ STEP 3 — READ EACH PAD by comparing its color to the matching column on the re
 - Stabilizer pad: white-to-dark-purple spectrum. Reference: 0=white, 30=faint mauve, 50=light mauve, 100=medium purple, 150=dark purple, 300=very dark. NORMAL: 30–50 = faint mauve. Dark maroon/purple = 100+ ppm (TOO HIGH)
 
 STEP 4 — Output ONLY this JSON, no other text:
-{"ph": 7.4, "cl": 0.5, "alk": 120, "stab": 100, "reasoning": {"ph": "medium orange matches ~7.4", "cl": "nearly colorless = ~0 ppm", "alk": "dark green = ~120", "stab": "dark maroon = ~100-150, white extension confirms this is stabilizer pad"}}
+{"ph": 7.4, "cl": 0.5, "alk": 120, "stab": 100, "pad_colors": {"ph": "#E8952A", "cl": "#F8F0F0", "alk": "#5A7A42", "stab": "#8B1A4A"}, "reasoning": {"ph": "medium orange matches ~7.4", "cl": "nearly colorless = ~0 ppm", "alk": "dark green = ~120", "stab": "dark maroon = ~100-150, white extension confirms this is stabilizer pad"}}
+
+For pad_colors: report the actual dominant hex color you observe on each test pad on the strip (NOT from the reference chart). This is what you literally see on the plastic strip after it was dipped in water.
 PROMPT;
     $payload=json_encode(['model'=>'claude-sonnet-4-20250514','max_tokens'=>400,'messages'=>[['role'=>'user','content'=>[['type'=>'image','source'=>['type'=>'base64','media_type'=>$mt,'data'=>$b64]],['type'=>'text','text'=>$prompt]]]]]);
     $ctx=stream_context_create(['http'=>['method'=>'POST','header'=>"Content-Type: application/json\r\nx-api-key: ".CLAUDE_API_KEY."\r\nanthropic-version: 2023-06-01\r\n",'content'=>$payload,'timeout'=>30]]);
@@ -239,11 +242,12 @@ PROMPT;
     $v=json_decode($m[0],true);
     if(!$v) respond(['error'=>'Ongeldige AI response'],422);
     respond([
-        'ph'      =>min(9, max(6,  round((float)($v['ph']  ??7.4),1))),
-        'cl'      =>min(10,max(0,  round((float)($v['cl']  ??1.5),1))),
-        'alk'     =>min(300,max(0, (int)($v['alk'] ??100))),
-        'stab'    =>min(200,max(0, (int)($v['stab']??40))),
-        'reasoning'=>$v['reasoning']??null,
+        'ph'        =>min(9, max(6,  round((float)($v['ph']  ??7.4),1))),
+        'cl'        =>min(10,max(0,  round((float)($v['cl']  ??1.5),1))),
+        'alk'       =>min(300,max(0, (int)($v['alk'] ??100))),
+        'stab'      =>min(200,max(0, (int)($v['stab']??40))),
+        'pad_colors'=>$v['pad_colors']??null,
+        'reasoning' =>$v['reasoning']??null,
     ]);
 }
 
@@ -476,6 +480,27 @@ function linkUserWoning():void {
     if(empty($d['user_id'])||empty($d['woning_id'])) respond(['error'=>'IDs vereist'],400);
     db()->prepare("INSERT IGNORE INTO user_woningen (user_id,woning_id) VALUES (?,?)")->execute([$d['user_id'],$d['woning_id']]);
     respond(['success'=>true]);
+}
+
+// ============================================================
+// APP STATUS (versie check voor admin)
+// ============================================================
+function appStatus():void {
+    requireAdmin();
+    $dbVersion = null; $lastDeploy = null;
+    try {
+        $st=db()->query("SELECT key_name,value FROM app_meta WHERE key_name IN ('db_version','last_deploy')");
+        foreach($st->fetchAll() as $r) {
+            if($r['key_name']==='db_version') $dbVersion=$r['value'];
+            if($r['key_name']==='last_deploy') $lastDeploy=$r['value'];
+        }
+    } catch(Throwable $e) {}
+    respond([
+        'file_version' => APP_VERSION,
+        'db_version'   => $dbVersion,
+        'last_deploy'  => $lastDeploy,
+        'match'        => $dbVersion === APP_VERSION,
+    ]);
 }
 
 // ============================================================

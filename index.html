@@ -443,11 +443,17 @@ function renderAIResult(){
       if(p.val===null) return '';
       const s=statusCls(p.val,p.lo,p.hi);
       const pct=Math.round(((p.val-p.min)/(p.max-p.min))*100);
-      const swatchColor=p.colorFn(p.val);
+      // Use actual AI-observed color if available, else compute from value
+      const padColors=S.aiPadColors||{};
+      const actualColor=padColors[p.key];
+      const swatchColor=actualColor||p.colorFn(p.val);
       const normColor1=p.colorFn(p.lo); const normColor2=p.colorFn(p.hi);
+      const swatchTitle=actualColor?'Werkelijke kleur die AI zag op de strip':'Berekende kleur op basis van waarde';
       return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:0.5px solid var(--bd)">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-          <div style="width:32px;height:32px;border-radius:6px;background:${swatchColor};border:1px solid rgba(0,0,0,.15);flex-shrink:0" title="AI-herkende kleur"></div>
+          <div style="width:36px;height:36px;border-radius:6px;background:${swatchColor};border:2px solid rgba(0,0,0,.2);flex-shrink:0;position:relative" title="${swatchTitle}">
+            ${actualColor?'':'<div style=\"position:absolute;bottom:-1px;right:-1px;width:10px;height:10px;background:#f4a261;border-radius:50%;border:1px solid #fff\" title=\"Berekend, niet gemeten\"></div>'}
+          </div>
           <div style="flex:1">
             <div style="display:flex;align-items:center;justify-content:space-between">
               <span style="font-size:13px;font-weight:600">${p.label}</span>
@@ -480,7 +486,8 @@ function updateAIVal(key, raw){
   if(el) el.textContent=v+p.unit;
   // Update swatch color
   const colorFns={ph:phColor,cl:clColor,alk:alkColor,stab:stabColor};
-  const swatch=document.querySelector(`[oninput*="${key}"]`)?.parentElement?.previousElementSibling?.querySelector('div');
+  // After manual adjustment, switch to computed color
+  const swatch=document.querySelector(`[oninput*="${key}"]`)?.closest('div[style*="margin-bottom:14px"]')?.querySelector('div[style*="border-radius:6px"]');
   if(swatch&&colorFns[key]) swatch.style.background=colorFns[key](v);
   // Update status badge
   const ranges={ph:[7.2,7.6],cl:[0.5,3.0],alk:[80,120],stab:[30,80]};
@@ -512,6 +519,7 @@ async function analyzeStrip(b64,mt){
     if(data.ph!==undefined){
       S.ph=+data.ph; S.cl=+data.cl; S.alk=+data.alk; S.stab=data.stab||null;
       S.aiReasoning=data.reasoning||null;
+      S.aiPadColors=data.pad_colors||null;
       S.aiOriginal={ph:+data.ph,cl:+data.cl,alk:+data.alk,stab:data.stab||null};
       S.aiDone=true;
     } else {
