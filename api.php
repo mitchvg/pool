@@ -1,28 +1,31 @@
 <?php
-// PoolCheck Pro v4 — api.php
-// =====================================================
+// PoolCheck Pro — api.php
+// Credentials staan in config.local.php (niet in git)
+// Eerste keer installeren: open setup.php in de browser
 
-define('DB_HOST',    'localhost');
-define('DB_PORT',     3306);
-define('DB_NAME',   'pool');
-define('DB_USER',   'pool');
-define('DB_PASS',   '5S!5VcwPbc%v7ofw');
+// ── Laad lokale configuratie (NIET in git) ────────────────────
+if (file_exists(__DIR__.'/config.local.php')) {
+    require_once __DIR__.'/config.local.php';
+}
 
-define('MAIL_HOST', 'villaparkfontein.com');
-define('MAIL_PORT',  465);
-define('MAIL_USER', 'pool@villaparkfontein.com');
-define('MAIL_PASS', '28?wuY71y');
-define('MAIL_FROM', 'pool@villaparkfontein.com');
-define('MAIL_NAME', 'PoolCheck Pro');
-
-define('MANAGER_EMAIL', 'pool@villaparkfontein.com');
-define('ADMIN_PASS',    'PoolAdmin2024!');   // wijzig dit
-define('BASE_URL',      'https://pool.villaparkfontein.com');
-define('UPLOAD_DIR',    __DIR__ . '/uploads/');
-define('UPLOAD_URL',    BASE_URL . '/uploads/');
-
-// Claude Vision: vul in na console.anthropic.com
-define('CLAUDE_API_KEY', '');  // Vul hier eenmalig in; na deploy wordt uit DB gelezen
+// ── Fallback defaults (vervang via setup.php of config.local.php) ─
+if (!defined('DB_HOST'))        define('DB_HOST',        'localhost');
+if (!defined('DB_PORT'))        define('DB_PORT',         3306);
+if (!defined('DB_NAME'))        define('DB_NAME',        'pool');
+if (!defined('DB_USER'))        define('DB_USER',        'pool');
+if (!defined('DB_PASS'))        define('DB_PASS',        '');           // Vul in via setup.php
+if (!defined('MAIL_HOST'))      define('MAIL_HOST',      '');
+if (!defined('MAIL_PORT'))      define('MAIL_PORT',       465);
+if (!defined('MAIL_USER'))      define('MAIL_USER',      '');
+if (!defined('MAIL_PASS'))      define('MAIL_PASS',      '');
+if (!defined('MAIL_FROM'))      define('MAIL_FROM',      '');
+if (!defined('MAIL_NAME'))      define('MAIL_NAME',      'PoolCheck Pro');
+if (!defined('MANAGER_EMAIL'))  define('MANAGER_EMAIL',  '');
+if (!defined('ADMIN_PASS'))     define('ADMIN_PASS',     'PoolCheck2024!');
+if (!defined('BASE_URL'))       define('BASE_URL',       'https://pool.villaparkfontein.com');
+if (!defined('CLAUDE_API_KEY')) define('CLAUDE_API_KEY', '');
+if (!defined('UPLOAD_DIR'))     define('UPLOAD_DIR',     __DIR__.'/uploads/');
+if (!defined('UPLOAD_URL'))     define('UPLOAD_URL',     BASE_URL.'/uploads/');
 
 // Lees API key: DB heeft voorrang over de constante hierboven
 function getApiKey(): string {
@@ -173,14 +176,11 @@ function input():array { $r=file_get_contents('php://input'); return json_decode
 function reqAdmin():void { if(empty($_SESSION['admin'])) respond(['error'=>'Niet ingelogd'],401); }
 function hasRole(array $user,string $role):bool { return in_array($role,explode(',',$user['roles'])); }
 
-// ── AUTO-MIGRATE ──────────────────────────────────────────────
-// Detecteert bestandswijziging en draait SQL-migraties automatisch.
-// Geen Plesk-actie nodig — werkt bij elke GitHub push + Plesk pull.
+// ── AUTO-MIGRATE ─────────────────────────────────────────────
+// Detecteert bestandswijziging automatisch. Geen Plesk-actie nodig.
 function autoMigrate(): void {
-    $currentVer = date('YmdHi', filemtime(__FILE__)); // verandert bij elke upload
-
-    // Schema SQL — alle statements zijn idempotent (IF NOT EXISTS / INSERT IGNORE)
-    static $SCHEMA = "
+    $ver = date('YmdHi', filemtime(__FILE__));
+    $sql = <<<'ENDSQL'
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL,
   email VARCHAR(100) NOT NULL, phone VARCHAR(30) DEFAULT '',
@@ -221,49 +221,45 @@ CREATE TABLE IF NOT EXISTS app_meta (
   key_name VARCHAR(50) PRIMARY KEY, value VARCHAR(500) NOT NULL,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
-INSERT IGNORE INTO users (name,email,phone,magic_token,roles) VALUES
-  ('Tycho Hombergen','tycho.hombergen@villaparkfontein.com','',MD5('tycho_v4_2024'),'monteur'),
-  ('Manager','pool@villaparkfontein.com','',MD5('manager_v4_2024'),'monteur,admin');
-INSERT IGNORE INTO woningen (name,owner_name,email,address,pool_type,volume_liters,qr_token,history_token,pool_code) VALUES
-  ('Villa Janssen','Peter Janssen','mitchvg@gmail.com','Koningslaan 12, Amsterdam','Privé buitenbad',40000,MD5('jan_qr_v4'),MD5('jan_hist_v4'),LEFT(MD5('jan_code_v4'),6)),
-  ('Hotel Metropol','Receptie','mitchvg@gmail.com','Stationsplein 3, Utrecht','Hotel binnenbad',120000,MD5('met_qr_v4'),MD5('met_hist_v4'),LEFT(MD5('met_code_v4'),6)),
-  ('Villa De Vries','Sandra de Vries','mitchvg@gmail.com','Parkweg 7, Haarlem','Privé spa',25000,MD5('dev_qr_v4'),MD5('dev_hist_v4'),LEFT(MD5('dev_code_v4'),6));
-";
+ENDSQL;
     try {
         $pdo = db();
-        // Check if migration needed
+        // Check version
         try {
             $dbVer = $pdo->query("SELECT value FROM app_meta WHERE key_name='db_version'")->fetchColumn();
-            if ($dbVer === $currentVer) return; // Already up to date
-        } catch (Throwable $e) {
-            // app_meta doesn't exist yet — run everything
-        }
-        // Run all statements
-        foreach (preg_split('/;\s*\n/', $SCHEMA, -1, PREG_SPLIT_NO_EMPTY) as $stmt) {
+            if ($dbVer === $ver) return;
+        } catch (Throwable $e) { /* table may not exist yet */ }
+
+        // Run schema
+        foreach (preg_split('/;\s*\n/', $sql, -1, PREG_SPLIT_NO_EMPTY) as $stmt) {
             $stmt = trim($stmt);
-            if (!$stmt || str_starts_with(ltrim($stmt), '--')) continue;
-            try { $pdo->exec($stmt); } catch (PDOException $e) {
-                if (!str_contains($e->getMessage(),'already exists') && !str_contains($e->getMessage(),'Duplicate'))
+            if ($stmt === '' || str_starts_with(ltrim($stmt), '--')) continue;
+            try { $pdo->exec($stmt); }
+            catch (PDOException $e) {
+                if (!str_contains($e->getMessage(), 'already exists') && !str_contains($e->getMessage(), 'Duplicate'))
                     error_log("PoolCheck migrate: ".$e->getMessage());
             }
         }
+
+        // Seed default users/woningen (INSERT IGNORE — safe to repeat)
+        $seeds = [
+            "INSERT IGNORE INTO users (name,email,magic_token,roles) VALUES ('Tycho Hombergen','tycho.hombergen@villaparkfontein.com',MD5('tycho_v4_2024'),'monteur'),('Manager','pool@villaparkfontein.com',MD5('manager_v4_2024'),'monteur,admin')",
+            "INSERT IGNORE INTO woningen (name,owner_name,email,address,pool_type,volume_liters,qr_token,history_token,pool_code) VALUES ('Villa Janssen','Peter Janssen','mitchvg@gmail.com','Koningslaan 12, Amsterdam','Privé buitenbad',40000,MD5('jan_qr_v4'),MD5('jan_hist_v4'),LEFT(MD5('jan_code_v4'),6)),('Hotel Metropol','Receptie','mitchvg@gmail.com','Stationsplein 3, Utrecht','Hotel binnenbad',120000,MD5('met_qr_v4'),MD5('met_hist_v4'),LEFT(MD5('met_code_v4'),6)),('Villa De Vries','Sandra de Vries','mitchvg@gmail.com','Parkweg 7, Haarlem','Privé spa',25000,MD5('dev_qr_v4'),MD5('dev_hist_v4'),LEFT(MD5('dev_code_v4'),6))",
+        ];
+        foreach ($seeds as $s) { try { $pdo->exec($s); } catch (Throwable $e) {} }
+
         // Save version + API key
         $ins = "INSERT INTO app_meta (key_name,value) VALUES (?,?) ON DUPLICATE KEY UPDATE value=?,updated_at=NOW()";
-        $pdo->prepare($ins)->execute(['db_version', $currentVer, $currentVer]);
-        $pdo->prepare($ins)->execute(['last_deploy', date('d-m-Y H:i:s'), date('d-m-Y H:i:s')]);
-        // Store API key if defined and not yet in DB
-        $apiKey = CLAUDE_API_KEY;
-        if (strlen($apiKey) > 10) {
-            $existing = $pdo->query("SELECT value FROM app_meta WHERE key_name='claude_api_key'")->fetchColumn();
-            if (!$existing || $existing !== $apiKey) {
-                $pdo->prepare($ins)->execute(['claude_api_key', $apiKey, $apiKey]);
-            }
+        $pdo->prepare($ins)->execute(['db_version',  $ver,                $ver]);
+        $pdo->prepare($ins)->execute(['last_deploy',  date('d-m-Y H:i:s'), date('d-m-Y H:i:s')]);
+        if (strlen(CLAUDE_API_KEY) > 10) {
+            $pdo->prepare($ins)->execute(['claude_api_key', CLAUDE_API_KEY, CLAUDE_API_KEY]);
         }
     } catch (Throwable $e) {
-        error_log("PoolCheck autoMigrate error: ".$e->getMessage());
+        error_log("PoolCheck autoMigrate failed: ".$e->getMessage());
     }
 }
-autoMigrate(); // Draait bij elke request, maar doet alleen iets als versie veranderd is
+autoMigrate();
 
 $action = $_GET['action'] ?? input()['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
@@ -720,12 +716,12 @@ function linkUserWoning():void {
 // APP STATUS (versie check voor admin)
 // ============================================================
 function doAutoMigrate():void {
-    requireAdmin();
+    reqAdmin();
     respond(runAutoMigrate());
 }
 
 function appStatus():void {
-    requireAdmin();
+    reqAdmin();
     $fileVersion = getFileVersion();
     $dbVersion   = getMeta('db_version');
     $lastDeploy  = getMeta('last_deploy');

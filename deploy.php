@@ -18,11 +18,14 @@ if (php_sapi_name() !== 'cli') {
     exit;
 }
 
-// ── DB verbinding ────────────────────────────────────────────
-$DB_HOST = 'localhost';
-$DB_NAME = 'pool';
-$DB_USER = 'pool';
-$DB_PASS = '5S!5VcwPbc%v7ofw';
+// ── DB verbinding — uit config.local.php ─────────────────────
+if (file_exists(__DIR__.'/config.local.php')) {
+    require_once __DIR__.'/config.local.php';
+}
+$DB_HOST = defined('DB_HOST') ? DB_HOST : 'localhost';
+$DB_NAME = defined('DB_NAME') ? DB_NAME : 'pool';
+$DB_USER = defined('DB_USER') ? DB_USER : 'pool';
+$DB_PASS = defined('DB_PASS') ? DB_PASS : '';
 
 // ── Versie: automatisch uit git commit datum ─────────────────
 function getVersion(): string {
