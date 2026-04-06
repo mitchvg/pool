@@ -88,7 +88,6 @@ tr:hover td{background:#fafaf8}
     <button class="nav" onclick="nav('users',this)"><em>👥</em> Gebruikers</button>
     <button class="nav" onclick="nav('visits',this)"><em>📋</em> Bezoeken</button>
     <div class="spacer"></div>
-    <button class="nav" onclick="window.open('update.php','_blank')"><em>📦</em> Updater</button>
     <button class="nav" onclick="logout()"><em>🚪</em> Uitloggen</button>
   </nav>
   <main class="main">
@@ -191,11 +190,21 @@ function drawDash() {
   call('app_status').then(s => {
     const match = s.match;
     const badge = match
-      ? `<span style="background:#eaf3de;color:#2d6a4f;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">✓ Versie ${s.file_version} — up to date</span>`
-      : `<span style="background:#fcebeb;color:#8b1c1c;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">⚠ Bestanden v${s.file_version} — Database v${s.db_version||'?'} — Mismatch!</span>`;
-    const info = `<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">${badge}<span style="font-size:12px;color:var(--t3)">Laatste deploy: ${s.last_deploy||'onbekend'}</span></div>`;
-    document.getElementById('stats').insertAdjacentHTML('beforebegin', info);
-  }).catch(()=>{});
+      ? `<span style="background:#eaf3de;color:#2d6a4f;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">✓ Versie ${s.file_version} — database bijgewerkt</span>`
+      : `<span style="background:#fcebeb;color:#8b1c1c;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600">⚠ Bestanden v${s.file_version} — DB v${s.db_version||'?'} — voer deploy.php uit!</span>`;
+    const deploy = s.last_deploy
+      ? `<span style="font-size:12px;color:var(--t3)">Laatste deploy: ${s.last_deploy}</span>`
+      : `<span style="font-size:12px;color:var(--t3)">Nog geen deploy uitgevoerd — roep deploy.php aan via Plesk</span>`;
+    const vDiv = document.createElement('div');
+    vDiv.style.cssText = 'margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--bg);border-radius:var(--rs)';
+    vDiv.innerHTML = badge + ' ' + deploy;
+    document.getElementById('pg-dashboard').insertAdjacentElement('afterbegin', vDiv);
+  }).catch(e => {
+    const vDiv = document.createElement('div');
+    vDiv.style.cssText = 'margin-bottom:14px;padding:10px 14px;background:#faeeda;border-radius:var(--rs);font-size:12px;color:#7a4f00';
+    vDiv.textContent = '⚠ Versie info niet beschikbaar — deploy.php nog niet uitgevoerd via Plesk';
+    document.getElementById('pg-dashboard').insertAdjacentElement('afterbegin', vDiv);
+  });
 }
 
 // ─── WONINGEN ──────────────────────────────────────

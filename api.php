@@ -224,10 +224,19 @@ STEP 3 — READ EACH PAD by comparing its color to the matching column on the re
 - Total Alkalinity pad: yellow-green-to-dark-green spectrum. Reference: 0=pale yellow, 40=light green, 80=medium green, 120=dark green, 180=very dark green. NORMAL: 80–120 = medium green
 - Stabilizer pad: white-to-dark-purple spectrum. Reference: 0=white, 30=faint mauve, 50=light mauve, 100=medium purple, 150=dark purple, 300=very dark. NORMAL: 30–50 = faint mauve. Dark maroon/purple = 100+ ppm (TOO HIGH)
 
-STEP 4 — Output ONLY this JSON, no other text:
-{"ph": 7.4, "cl": 0.5, "alk": 120, "stab": 100, "pad_colors": {"ph": "#E8952A", "cl": "#F8F0F0", "alk": "#5A7A42", "stab": "#8B1A4A"}, "reasoning": {"ph": "medium orange matches ~7.4", "cl": "nearly colorless = ~0 ppm", "alk": "dark green = ~120", "stab": "dark maroon = ~100-150, white extension confirms this is stabilizer pad"}}
+STEP 4 — Output ONLY this JSON (no other text, no markdown):
+{
+  "ph": 7.4,
+  "cl": 0.5,
+  "alk": 120,
+  "stab": 100,
+  "pad_colors": {"ph": "#E8952A", "cl": "#F8F0F0", "alk": "#5A7A42", "stab": "#8B1A4A"},
+  "pad_positions": {"ph": {"x": 50, "y": 18}, "cl": {"x": 50, "y": 35}, "alk": {"x": 50, "y": 52}, "stab": {"x": 50, "y": 70}},
+  "reasoning": {"ph": "medium orange ~7.4", "cl": "colorless ~0 ppm", "alk": "dark green ~120", "stab": "dark maroon ~120-150"}
+}
 
-For pad_colors: report the actual dominant hex color you observe on each test pad on the strip (NOT from the reference chart). This is what you literally see on the plastic strip after it was dipped in water.
+IMPORTANT for pad_positions: x and y are percentages (0-100) of the FULL IMAGE dimensions indicating the CENTER of each test pad on the narrow white plastic strip. Estimate carefully — this is used to crop the actual pad from the photo.
+For pad_colors: the actual dominant hex color you see on each pad (what the strip shows after dipping), NOT from the reference chart.
 PROMPT;
     $payload=json_encode(['model'=>'claude-sonnet-4-20250514','max_tokens'=>400,'messages'=>[['role'=>'user','content'=>[['type'=>'image','source'=>['type'=>'base64','media_type'=>$mt,'data'=>$b64]],['type'=>'text','text'=>$prompt]]]]]);
     $ctx=stream_context_create(['http'=>['method'=>'POST','header'=>"Content-Type: application/json\r\nx-api-key: ".CLAUDE_API_KEY."\r\nanthropic-version: 2023-06-01\r\n",'content'=>$payload,'timeout'=>30]]);

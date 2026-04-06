@@ -424,78 +424,138 @@ function stabColor(v){
   if(v<150) return '#9840A8';
   return '#6010A0';
 }
-function clampVal(v,min,max){return Math.min(max,Math.max(min,+v||0));}
+
+// Extract actual pad crops from photo using Canvas
+function extractPadCrops(imgSrc, positions){
+  const img = new Image();
+  img.onload = () => {
+    const crops = {};
+    const W = img.naturalWidth, H = img.naturalHeight;
+    const cropW = Math.round(W * 0.06); // crop ~6% of image width
+    const cropH = Math.round(H * 0.06); // and height
+    for(const [key, pos] of Object.entries(positions)){
+      try{
+        const canvas = document.createElement('canvas');
+        const size = Math.max(cropW, cropH);
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        const sx = Math.round((pos.x/100)*W - size/2);
+        const sy = Math.round((pos.y/100)*H - size/2);
+        ctx.drawImage(img, Math.max(0,sx), Math.max(0,sy), size, size, 0, 0, size, size);
+        crops[key] = canvas.toDataURL('image/jpeg',0.9);
+      }catch(e){}
+    }
+    S.padCrops = crops;
+    // Re-render to show crops (only if still on photo step)
+    if(S.step===1 && S.aiDone) render();
+  };
+  img.src = imgSrc;
+}
+
+// Gradient scale bar with norm zone marker and value indicator
+function gradientBar(key, val, minV, maxV, normLo, normHi, colorFn, unit, steps){
+  const stops = steps.map(v => `${colorFn(v)} ${Math.round(((v-minV)/(maxV-minV))*100)}%`).join(',');
+  const normLoP = Math.round(((normLo-minV)/(maxV-minV))*100);
+  const normHiP = Math.round(((normHi-minV)/(maxV-minV))*100);
+  const valP    = Math.min(100,Math.max(0,Math.round(((val-minV)/(maxV-minV))*100)));
+  return `<div style="position:relative;margin:6px 0 10px">
+    <!-- gradient track -->
+    <div style="height:14px;border-radius:7px;background:linear-gradient(to right,${stops});position:relative;overflow:visible">
+      <!-- norm zone highlight -->
+      <div style="position:absolute;top:0;left:${normLoP}%;width:${normHiP-normLoP}%;height:100%;background:rgba(255,255,255,0.35);border-left:2px solid rgba(255,255,255,0.8);border-right:2px solid rgba(255,255,255,0.8)"></div>
+      <!-- value marker -->
+      <div id="bar-marker-${key}" style="position:absolute;top:-4px;left:${valP}%;transform:translateX(-50%);width:6px;height:22px;background:var(--t);border-radius:3px;border:2px solid white;transition:left .15s"></div>
+    </div>
+    <!-- scale labels -->
+    <div style="display:flex;justify-content:space-between;margin-top:3px;font-size:9px;color:var(--t3)">
+      ${steps.filter((_,i)=>i%2===0).map(v=>`<span>${v}${unit}</span>`).join('')}
+    </div>
+    <!-- norm zone label -->
+    <div style="position:absolute;top:-18px;left:${normLoP}%;font-size:9px;color:#2d6a4f;font-weight:600">Norm: ${normLo}–${normHi}${unit}</div>
+  </div>`;
+}
 
 function renderAIResult(){
   const r=S.aiReasoning||{};
+  const colors=S.aiPadColors||{};
+  const crops=S.padCrops||{};
   const params=[
-    {key:'ph', label:'pH',        val:S.ph,   lo:7.2,hi:7.6, min:6.0,max:9.0, step:0.1, unit:'',     colorFn:phColor,  reasons:r.ph},
-    {key:'cl', label:'Chloor',    val:S.cl,   lo:0.5,hi:3.0, min:0,  max:10,  step:0.1, unit:' ppm', colorFn:clColor,  reasons:r.cl},
-    {key:'alk',label:'Alkaliniteit',val:S.alk, lo:80, hi:120, min:0,  max:300, step:5,   unit:' ppm', colorFn:alkColor, reasons:r.alk},
-    {key:'stab',label:'Stabilizer', val:S.stab,lo:30, hi:80,  min:0,  max:300, step:5,   unit:' ppm', colorFn:stabColor,reasons:r.stab},
+    {key:'ph', label:'pH',          val:S.ph,   lo:7.2,hi:7.6, min:6.0,max:9.0, step:0.1, unit:'',     colorFn:phColor,
+     steps:[6.2,6.8,7.2,7.6,8.0,8.4,8.8], gradSteps:[6.0,6.5,7.0,7.2,7.4,7.6,7.8,8.0,8.4,9.0]},
+    {key:'cl', label:'Chloor',      val:S.cl,   lo:0.5,hi:3.0, min:0,  max:10,  step:0.1, unit:' ppm', colorFn:clColor,
+     steps:[0,1,2,3,5,7,10],             gradSteps:[0,0.3,0.7,1.5,3,5,7,10]},
+    {key:'alk',label:'Alkaliniteit',val:S.alk,  lo:80, hi:120, min:0,  max:240, step:5,   unit:' ppm', colorFn:alkColor,
+     steps:[0,40,80,120,160,200,240],    gradSteps:[0,40,80,120,160,200,240]},
+    {key:'stab',label:'Stabilizer', val:S.stab, lo:30, hi:80,  min:0,  max:300, step:5,   unit:' ppm', colorFn:stabColor,
+     steps:[0,50,100,150,200,300],       gradSteps:[0,30,50,80,100,150,200,300]},
   ];
   function statusCls(v,lo,hi){return v===null?'so':v<lo?'sbad':v>hi?'sw':'so';}
   function statusLb(s){return s==='so'?'OK':s==='sw'?'Te hoog':'Te laag';}
 
   return `<div class="ai-z">
-    <div class="ai-h"><span class="ai-b">AI analyse</span><span style="font-size:11px;color:var(--t2)">Schuif om te corrigeren</span></div>
+    <div class="ai-h"><span class="ai-b">AI analyse</span><span style="font-size:11px;color:var(--t2)">Vergelijk met foto — schuif om te corrigeren</span></div>
     ${params.map(p=>{
       if(p.val===null) return '';
       const s=statusCls(p.val,p.lo,p.hi);
-      const pct=Math.round(((p.val-p.min)/(p.max-p.min))*100);
-      // Use actual AI-observed color if available, else compute from value
-      const padColors=S.aiPadColors||{};
-      const actualColor=padColors[p.key];
-      const swatchColor=actualColor||p.colorFn(p.val);
-      const normColor1=p.colorFn(p.lo); const normColor2=p.colorFn(p.hi);
-      const swatchTitle=actualColor?'Werkelijke kleur die AI zag op de strip':'Berekende kleur op basis van waarde';
-      return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:0.5px solid var(--bd)">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-          <div style="width:36px;height:36px;border-radius:6px;background:${swatchColor};border:2px solid rgba(0,0,0,.2);flex-shrink:0;position:relative" title="${swatchTitle}">
-            ${actualColor?'':'<div style=\"position:absolute;bottom:-1px;right:-1px;width:10px;height:10px;background:#f4a261;border-radius:50%;border:1px solid #fff\" title=\"Berekend, niet gemeten\"></div>'}
-          </div>
-          <div style="flex:1">
-            <div style="display:flex;align-items:center;justify-content:space-between">
-              <span style="font-size:13px;font-weight:600">${p.label}</span>
+      const crop=crops[p.key];         // actual photo crop
+      const hexColor=colors[p.key];    // AI-reported hex color
+      // Show: [actual crop OR hex swatch] | label + status | reasoning
+      const swatchHtml = crop
+        ? `<img src="${crop}" style="width:40px;height:40px;border-radius:5px;border:2px solid rgba(0,0,0,.2);object-fit:cover;flex-shrink:0;image-rendering:pixelated" title="Uitgesneden pad uit foto">`
+        : `<div style="width:40px;height:40px;border-radius:5px;border:2px solid rgba(0,0,0,.15);flex-shrink:0;background:${hexColor||p.colorFn(p.val)};display:flex;align-items:center;justify-content:center"><span style="font-size:9px;color:rgba(0,0,0,.4)">${crop?'':'~'}</span></div>`;
+      const colorDot = hexColor
+        ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${hexColor};border:1px solid rgba(0,0,0,.2);margin-right:4px;vertical-align:middle" title="AI-gerapporteerde kleur"></span>`
+        : '';
+      const gradBar = gradientBar(p.key, p.val, p.min, p.max, p.lo, p.hi, p.colorFn, p.unit, p.gradSteps);
+      return `<div style="margin-bottom:18px;padding-bottom:16px;border-bottom:0.5px solid var(--bd)">
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
+          ${swatchHtml}
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
+              <span style="font-size:13px;font-weight:700">${colorDot}${p.label}</span>
               <span class="sb ${s}">${statusLb(s)}</span>
             </div>
-            ${p.reasons?`<div style="font-size:10px;color:var(--t3);line-height:1.4">${p.reasons}</div>`:''}
+            ${r[p.key]?`<div style="font-size:10px;color:var(--t3);line-height:1.4">${r[p.key]}</div>`:''}
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <div style="width:20px;height:16px;border-radius:3px;background:${normColor1};border:1px solid rgba(0,0,0,.1);flex-shrink:0" title="Norm laag"></div>
+        <!-- gradient reference bar -->
+        <div style="position:relative;padding-top:20px">${gradBar}</div>
+        <!-- slider -->
+        <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
           <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.val}"
             style="flex:1;accent-color:var(--g)"
             oninput="updateAIVal('${p.key}',this.value)"
             onchange="updateAIVal('${p.key}',this.value)">
-          <div style="width:20px;height:16px;border-radius:3px;background:${normColor2};border:1px solid rgba(0,0,0,.1);flex-shrink:0" title="Norm hoog"></div>
-          <span style="font-size:15px;font-weight:700;min-width:52px;text-align:right" id="aiv-${p.key}">${p.val}${p.unit}</span>
+          <span style="font-size:16px;font-weight:700;min-width:60px;text-align:right" id="aiv-${p.key}">${p.val}${p.unit}</span>
         </div>
       </div>`;
     }).join('')}
-    <p style="font-size:11px;color:var(--t3)">Kleurvlakje = wat AI ziet op de strip. Schuif als waarde niet klopt.</p>
+    <p style="font-size:11px;color:var(--t3);text-align:center">Groen gearceerd gebied = normwaarde. Lijn = huidige waarde.</p>
   </div>`;
 }
 
 function updateAIVal(key, raw){
   const params={ph:{min:6,max:9,step:0.1,unit:''},cl:{min:0,max:10,step:0.1,unit:' ppm'},alk:{min:0,max:300,step:1,unit:' ppm'},stab:{min:0,max:300,step:1,unit:' ppm'}};
+  const colorFns={ph:phColor,cl:clColor,alk:alkColor,stab:stabColor};
+  const ranges={ph:[7.2,7.6],cl:[0.5,3.0],alk:[80,120],stab:[30,80]};
   const p=params[key]; if(!p) return;
   const v=key==='ph'||key==='cl'?parseFloat((+raw).toFixed(1)):parseInt(raw);
   S[key]=v;
+  // Update value display
   const el=document.getElementById('aiv-'+key);
   if(el) el.textContent=v+p.unit;
-  // Update swatch color
-  const colorFns={ph:phColor,cl:clColor,alk:alkColor,stab:stabColor};
-  // After manual adjustment, switch to computed color
-  const swatch=document.querySelector(`[oninput*="${key}"]`)?.closest('div[style*="margin-bottom:14px"]')?.querySelector('div[style*="border-radius:6px"]');
-  if(swatch&&colorFns[key]) swatch.style.background=colorFns[key](v);
+  // Update gradient bar marker
+  const marker=document.getElementById('bar-marker-'+key);
+  if(marker){
+    const [lo,hi]=ranges[key]||[0,999];
+    const pct=Math.min(100,Math.max(0,Math.round(((v-p.min)/(p.max-p.min))*100)));
+    marker.style.left=pct+'%';
+  }
   // Update status badge
-  const ranges={ph:[7.2,7.6],cl:[0.5,3.0],alk:[80,120],stab:[30,80]};
   const [lo,hi]=ranges[key]||[0,999];
   const s=v<lo?'sbad':v>hi?'sw':'so';
   const lb=s==='so'?'OK':s==='sw'?'Te hoog':'Te laag';
-  const badge=document.querySelector(`[oninput*="${key}"]`)?.parentElement?.previousElementSibling?.querySelector('.sb');
-  if(badge){badge.className='sb '+s;badge.textContent=lb;}
 }
 
 function goToFormWithAI(){
@@ -520,8 +580,12 @@ async function analyzeStrip(b64,mt){
       S.ph=+data.ph; S.cl=+data.cl; S.alk=+data.alk; S.stab=data.stab||null;
       S.aiReasoning=data.reasoning||null;
       S.aiPadColors=data.pad_colors||null;
+      S.aiPadPositions=data.pad_positions||null;
+      S.padCrops=null; // will be extracted by canvas
       S.aiOriginal={ph:+data.ph,cl:+data.cl,alk:+data.alk,stab:data.stab||null};
       S.aiDone=true;
+      // Extract actual pad crops from photo using canvas
+      if(S.stripSrc && data.pad_positions) extractPadCrops(S.stripSrc, data.pad_positions);
     } else {
       toast((data.error||'AI kon strip niet lezen')+'  — vul handmatig in', 5000);
     }
