@@ -390,139 +390,150 @@ function stripExampleSVG(){
   </svg>`;
 }
 
-// Color functions for strip visualization
-function phColor(v){
-  if(v<=6.2) return '#FF4500';
-  if(v<=7.0) return '#FF8C00';
-  if(v<=7.4) return '#E8952A';
-  if(v<=7.6) return '#D4A94A';
-  if(v<=8.0) return '#C4B060';
-  return '#A09060';
-}
-function clColor(v){
-  if(v<0.2) return '#F8F0F0';
-  if(v<0.5) return '#FFD8D8';
-  if(v<1.0) return '#FFB8C0';
-  if(v<2.0) return '#FF8090';
-  if(v<4.0) return '#E05878';
-  if(v<6.0) return '#C03090';
-  return '#800080';
-}
-function alkColor(v){
-  if(v<20)  return '#F5F5D0';
-  if(v<60)  return '#C8DDA0';
-  if(v<100) return '#88BB60';
-  if(v<140) return '#508830';
-  if(v<180) return '#2D6820';
-  return '#1A4810';
-}
-function stabColor(v){
-  if(v<10)  return '#F8F0F8';
-  if(v<30)  return '#F0DCF0';
-  if(v<60)  return '#E0B8E0';
-  if(v<100) return '#C080C8';
-  if(v<150) return '#9840A8';
-  return '#6010A0';
-}
+// ── Aquacheck reference colors (known values from the chart) ──
+const AQUACHECK = {
+  ph:  [{v:6.2,c:'#FF5500'},{v:6.8,c:'#FF8C00'},{v:7.2,c:'#E89220'},{v:7.6,c:'#D4A840'},{v:8.0,c:'#C4B870'},{v:8.4,c:'#A89050'}],
+  cl:  [{v:0,c:'#F8F5F0'},{v:0.5,c:'#FFD8D8'},{v:1,c:'#FFB0B0'},{v:3,c:'#EE7088'},{v:5,c:'#D040B0'},{v:10,c:'#880099'}],
+  alk: [{v:0,c:'#F8F8D0'},{v:40,c:'#C8E090'},{v:80,c:'#88C050'},{v:120,c:'#448830'},{v:180,c:'#226018'},{v:240,c:'#0F3808'}],
+  stab:[{v:0,c:'#FBF0FB'},{v:30,c:'#F0D0F0'},{v:50,c:'#E0A8E0'},{v:100,c:'#C060C8'},{v:150,c:'#902298'},{v:300,c:'#480060'}],
+};
 
-// Extract actual pad crops from photo using Canvas
-function extractPadCrops(imgSrc, positions){
-  const img = new Image();
-  img.onload = () => {
-    const crops = {};
-    const W = img.naturalWidth, H = img.naturalHeight;
-    const cropW = Math.round(W * 0.06); // crop ~6% of image width
-    const cropH = Math.round(H * 0.06); // and height
-    for(const [key, pos] of Object.entries(positions)){
-      try{
-        const canvas = document.createElement('canvas');
-        const size = Math.max(cropW, cropH);
-        canvas.width = canvas.height = size;
-        const ctx = canvas.getContext('2d');
+// Extract canvas crop from photo
+function cropRegion(imgSrc, xPct, yPct, wPct, hPct, outW, outH) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = outW; c.height = outH;
+        const ctx = c.getContext('2d');
         ctx.imageSmoothingEnabled = false;
-        const sx = Math.round((pos.x/100)*W - size/2);
-        const sy = Math.round((pos.y/100)*H - size/2);
-        ctx.drawImage(img, Math.max(0,sx), Math.max(0,sy), size, size, 0, 0, size, size);
-        crops[key] = canvas.toDataURL('image/jpeg',0.9);
-      }catch(e){}
-    }
-    S.padCrops = crops;
-    // Re-render to show crops (only if still on photo step)
-    if(S.step===1 && S.aiDone) render();
-  };
-  img.src = imgSrc;
+        const sx = Math.max(0, Math.round((xPct/100)*img.naturalWidth));
+        const sy = Math.max(0, Math.round((yPct/100)*img.naturalHeight));
+        const sw = Math.round((wPct/100)*img.naturalWidth);
+        const sh = Math.round((hPct/100)*img.naturalHeight);
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, outW, outH);
+        resolve(c.toDataURL('image/jpeg', 0.92));
+      } catch(e) { resolve(null); }
+    };
+    img.onerror = () => resolve(null);
+    img.src = imgSrc;
+  });
 }
 
-// Gradient scale bar with norm zone marker and value indicator
-function gradientBar(key, val, minV, maxV, normLo, normHi, colorFn, unit, steps){
-  const stops = steps.map(v => `${colorFn(v)} ${Math.round(((v-minV)/(maxV-minV))*100)}%`).join(',');
-  const normLoP = Math.round(((normLo-minV)/(maxV-minV))*100);
-  const normHiP = Math.round(((normHi-minV)/(maxV-minV))*100);
-  const valP    = Math.min(100,Math.max(0,Math.round(((val-minV)/(maxV-minV))*100)));
-  return `<div style="position:relative;margin:6px 0 10px">
-    <!-- gradient track -->
-    <div style="height:14px;border-radius:7px;background:linear-gradient(to right,${stops});position:relative;overflow:visible">
-      <!-- norm zone highlight -->
-      <div style="position:absolute;top:0;left:${normLoP}%;width:${normHiP-normLoP}%;height:100%;background:rgba(255,255,255,0.35);border-left:2px solid rgba(255,255,255,0.8);border-right:2px solid rgba(255,255,255,0.8)"></div>
-      <!-- value marker -->
-      <div id="bar-marker-${key}" style="position:absolute;top:-4px;left:${valP}%;transform:translateX(-50%);width:6px;height:22px;background:var(--t);border-radius:3px;border:2px solid white;transition:left .15s"></div>
-    </div>
-    <!-- scale labels -->
-    <div style="display:flex;justify-content:space-between;margin-top:3px;font-size:9px;color:var(--t3)">
-      ${steps.filter((_,i)=>i%2===0).map(v=>`<span>${v}${unit}</span>`).join('')}
-    </div>
-    <!-- norm zone label -->
-    <div style="position:absolute;top:-18px;left:${normLoP}%;font-size:9px;color:#2d6a4f;font-weight:600">Norm: ${normLo}–${normHi}${unit}</div>
+// After AI result: extract strip region + 4 individual pad crops
+async function extractAllCrops(imgSrc, positions, stripBox) {
+  const crops = {};
+  // Full strip crop
+  if (stripBox) {
+    crops.strip = await cropRegion(imgSrc, stripBox.x1, stripBox.y1,
+      stripBox.x2-stripBox.x1, stripBox.y2-stripBox.y1, 80, 220);
+  }
+  // Individual pad crops (larger, with border pixels)
+  for (const [key, pos] of Object.entries(positions||{})) {
+    const pad = 3.5; // % padding around center
+    crops[key] = await cropRegion(imgSrc, pos.x-pad, pos.y-pad, pad*2, pad*2, 56, 56);
+  }
+  S.padCrops = crops;
+  if (S.step===1 && S.aiDone) render();
+}
+
+// Reference color swatches row for a parameter
+function refSwatches(key, currentVal) {
+  const stops = AQUACHECK[key] || [];
+  return `<div style="display:flex;gap:3px;margin:6px 0 4px;align-items:flex-end">
+    ${stops.map(s => {
+      const isNearest = stops.reduce((best, b) =>
+        Math.abs(b.v - currentVal) < Math.abs(best.v - currentVal) ? b : best
+      ) === s;
+      return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+        <div style="width:100%;aspect-ratio:1;border-radius:4px;background:${s.c};
+          border:${isNearest ? '2.5px solid var(--t)' : '1px solid rgba(0,0,0,.15)'};
+          box-shadow:${isNearest ? '0 0 0 1px white inset' : 'none'}"
+          title="Referentie ${s.v}"></div>
+        <span style="font-size:9px;color:var(--t2);line-height:1">${s.v}</span>
+      </div>`;
+    }).join('')}
   </div>`;
 }
 
-function renderAIResult(){
-  const r=S.aiReasoning||{};
-  const colors=S.aiPadColors||{};
-  const crops=S.padCrops||{};
-  const params=[
-    {key:'ph', label:'pH',          val:S.ph,   lo:7.2,hi:7.6, min:6.0,max:9.0, step:0.1, unit:'',     colorFn:phColor,
-     steps:[6.2,6.8,7.2,7.6,8.0,8.4,8.8], gradSteps:[6.0,6.5,7.0,7.2,7.4,7.6,7.8,8.0,8.4,9.0]},
-    {key:'cl', label:'Chloor',      val:S.cl,   lo:0.5,hi:3.0, min:0,  max:10,  step:0.1, unit:' ppm', colorFn:clColor,
-     steps:[0,1,2,3,5,7,10],             gradSteps:[0,0.3,0.7,1.5,3,5,7,10]},
-    {key:'alk',label:'Alkaliniteit',val:S.alk,  lo:80, hi:120, min:0,  max:240, step:5,   unit:' ppm', colorFn:alkColor,
-     steps:[0,40,80,120,160,200,240],    gradSteps:[0,40,80,120,160,200,240]},
-    {key:'stab',label:'Stabilizer', val:S.stab, lo:30, hi:80,  min:0,  max:300, step:5,   unit:' ppm', colorFn:stabColor,
-     steps:[0,50,100,150,200,300],       gradSteps:[0,30,50,80,100,150,200,300]},
+function renderAIResult() {
+  const r = S.aiReasoning || {};
+  const crops = S.padCrops || {};
+  const params = [
+    {key:'ph',  label:'pH',           val:S.ph,  lo:7.2, hi:7.6, min:6.0, max:9.0,  step:0.1, unit:''},
+    {key:'cl',  label:'Chloor',       val:S.cl,  lo:0.5, hi:3.0, min:0,   max:10,   step:0.1, unit:' ppm'},
+    {key:'alk', label:'Alkaliniteit', val:S.alk, lo:80,  hi:120, min:0,   max:240,  step:5,   unit:' ppm'},
+    {key:'stab',label:'Stabilizer',   val:S.stab,lo:30,  hi:80,  min:0,   max:300,  step:5,   unit:' ppm'},
   ];
+
   function statusCls(v,lo,hi){return v===null?'so':v<lo?'sbad':v>hi?'sw':'so';}
   function statusLb(s){return s==='so'?'OK':s==='sw'?'Te hoog':'Te laag';}
 
+  const stripCrop = crops.strip;
+
   return `<div class="ai-z">
-    <div class="ai-h"><span class="ai-b">AI analyse</span><span style="font-size:11px;color:var(--t2)">Vergelijk met foto — schuif om te corrigeren</span></div>
-    ${params.map(p=>{
-      if(p.val===null) return '';
-      const s=statusCls(p.val,p.lo,p.hi);
-      const crop=crops[p.key];         // actual photo crop
-      const hexColor=colors[p.key];    // AI-reported hex color
-      // Show: [actual crop OR hex swatch] | label + status | reasoning
-      const swatchHtml = crop
-        ? `<img src="${crop}" style="width:40px;height:40px;border-radius:5px;border:2px solid rgba(0,0,0,.2);object-fit:cover;flex-shrink:0;image-rendering:pixelated" title="Uitgesneden pad uit foto">`
-        : `<div style="width:40px;height:40px;border-radius:5px;border:2px solid rgba(0,0,0,.15);flex-shrink:0;background:${hexColor||p.colorFn(p.val)};display:flex;align-items:center;justify-content:center"><span style="font-size:9px;color:rgba(0,0,0,.4)">${crop?'':'~'}</span></div>`;
-      const colorDot = hexColor
-        ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${hexColor};border:1px solid rgba(0,0,0,.2);margin-right:4px;vertical-align:middle" title="AI-gerapporteerde kleur"></span>`
-        : '';
-      const gradBar = gradientBar(p.key, p.val, p.min, p.max, p.lo, p.hi, p.colorFn, p.unit, p.gradSteps);
+    <div class="ai-h">
+      <span class="ai-b">AI analyse</span>
+      <span style="font-size:11px;color:var(--t2)">Vergelijk pads met referentievakjes</span>
+    </div>
+
+    ${stripCrop ? `
+    <div style="display:flex;gap:10px;margin-bottom:14px;align-items:flex-start">
+      <div>
+        <div style="font-size:10px;color:var(--t3);margin-bottom:4px">Teststrip (uit foto)</div>
+        <img src="${stripCrop}" style="width:50px;height:auto;border-radius:6px;border:1.5px solid var(--bd);image-rendering:pixelated">
+      </div>
+      <div style="flex:1;font-size:11px;color:var(--t2);line-height:1.7;padding-top:18px">
+        Vergelijk de kleuren van de strip met de referentievakjes hieronder.
+        De dikgedrukte rand = AI-selectie. Schuif de slider als het niet klopt.
+      </div>
+    </div>` : ''}
+
+    ${params.map(p => {
+      if (p.val === null) return '';
+      const s = statusCls(p.val, p.lo, p.hi);
+      const padCrop = crops[p.key];
+      const pct = Math.min(100, Math.max(0, Math.round(((p.val-p.min)/(p.max-p.min))*100)));
+      const normLoPct = Math.round(((p.lo-p.min)/(p.max-p.min))*100);
+      const normHiPct = Math.round(((p.hi-p.min)/(p.max-p.min))*100);
+      const stops = (AQUACHECK[p.key]||[]).map(s=>s.c+' '+Math.round(((s.v-p.min)/(p.max-p.min))*100)+'%').join(',');
+
       return `<div style="margin-bottom:18px;padding-bottom:16px;border-bottom:0.5px solid var(--bd)">
-        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
-          ${swatchHtml}
-          <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">
-              <span style="font-size:13px;font-weight:700">${colorDot}${p.label}</span>
+
+        <!-- Header row: pad crop + label + status -->
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          ${padCrop
+            ? `<img src="${padCrop}" style="width:48px;height:48px;border-radius:6px;border:2px solid var(--bd);object-fit:cover;image-rendering:pixelated;flex-shrink:0" title="Uitgesneden pad">`
+            : `<div style="width:48px;height:48px;border-radius:6px;border:2px dashed var(--bd);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:18px">⏳</div>`}
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px;font-weight:700">${p.label}</span>
               <span class="sb ${s}">${statusLb(s)}</span>
             </div>
-            ${r[p.key]?`<div style="font-size:10px;color:var(--t3);line-height:1.4">${r[p.key]}</div>`:''}
+            ${r[p.key] ? `<div style="font-size:10px;color:var(--t3);line-height:1.4;margin-top:2px">${r[p.key]}</div>` : ''}
           </div>
         </div>
-        <!-- gradient reference bar -->
-        <div style="position:relative;padding-top:20px">${gradBar}</div>
-        <!-- slider -->
-        <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+
+        <!-- Aquacheck reference swatches with labels -->
+        <div style="font-size:10px;color:var(--t3);margin-bottom:2px">Referentie kleurenkaart (diktste rand = AI-keuze):</div>
+        ${refSwatches(p.key, p.val)}
+
+        <!-- Gradient bar with norm zone + value marker -->
+        <div style="position:relative;margin:8px 0 4px">
+          <div style="height:12px;border-radius:6px;background:linear-gradient(to right,${stops});position:relative">
+            <div style="position:absolute;top:0;left:${normLoPct}%;width:${normHiPct-normLoPct}%;height:100%;background:rgba(255,255,255,.3);border-left:2px solid rgba(255,255,255,.8);border-right:2px solid rgba(255,255,255,.8)"></div>
+            <div id="bm-${p.key}" style="position:absolute;top:-5px;left:${pct}%;transform:translateX(-50%);width:5px;height:22px;background:#111;border-radius:3px;border:2px solid white;transition:left .1s"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:2px;font-size:9px;color:var(--t3)">
+            <span>${p.min}${p.unit}</span>
+            <span style="color:#2d6a4f;font-weight:600">Norm ${p.lo}–${p.hi}</span>
+            <span>${p.max}${p.unit}</span>
+          </div>
+        </div>
+
+        <!-- Slider + value -->
+        <div style="display:flex;align-items:center;gap:8px">
           <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.val}"
             style="flex:1;accent-color:var(--g)"
             oninput="updateAIVal('${p.key}',this.value)"
@@ -531,31 +542,43 @@ function renderAIResult(){
         </div>
       </div>`;
     }).join('')}
-    <p style="font-size:11px;color:var(--t3);text-align:center">Groen gearceerd gebied = normwaarde. Lijn = huidige waarde.</p>
   </div>`;
 }
 
-function updateAIVal(key, raw){
-  const params={ph:{min:6,max:9,step:0.1,unit:''},cl:{min:0,max:10,step:0.1,unit:' ppm'},alk:{min:0,max:300,step:1,unit:' ppm'},stab:{min:0,max:300,step:1,unit:' ppm'}};
-  const colorFns={ph:phColor,cl:clColor,alk:alkColor,stab:stabColor};
-  const ranges={ph:[7.2,7.6],cl:[0.5,3.0],alk:[80,120],stab:[30,80]};
-  const p=params[key]; if(!p) return;
-  const v=key==='ph'||key==='cl'?parseFloat((+raw).toFixed(1)):parseInt(raw);
-  S[key]=v;
-  // Update value display
-  const el=document.getElementById('aiv-'+key);
-  if(el) el.textContent=v+p.unit;
-  // Update gradient bar marker
-  const marker=document.getElementById('bar-marker-'+key);
-  if(marker){
-    const [lo,hi]=ranges[key]||[0,999];
-    const pct=Math.min(100,Math.max(0,Math.round(((v-p.min)/(p.max-p.min))*100)));
-    marker.style.left=pct+'%';
+function updateAIVal(key, raw) {
+  const defs = {
+    ph:  {min:6,  max:9,   step:0.1, unit:'',     lo:7.2, hi:7.6},
+    cl:  {min:0,  max:10,  step:0.1, unit:' ppm', lo:0.5, hi:3.0},
+    alk: {min:0,  max:240, step:1,   unit:' ppm', lo:80,  hi:120},
+    stab:{min:0,  max:300, step:1,   unit:' ppm', lo:30,  hi:80},
+  };
+  const d = defs[key]; if (!d) return;
+  const v = (key==='ph'||key==='cl') ? parseFloat((+raw).toFixed(1)) : parseInt(raw);
+  S[key] = v;
+  const el = document.getElementById('aiv-'+key);
+  if (el) el.textContent = v + d.unit;
+  // Move gradient bar marker
+  const m = document.getElementById('bm-'+key);
+  if (m) {
+    const pct = Math.min(100,Math.max(0,Math.round(((v-d.min)/(d.max-d.min))*100)));
+    m.style.left = pct + '%';
+  }
+  // Update reference swatches highlight
+  const stops = AQUACHECK[key] || [];
+  const nearest = stops.reduce((b,s) => Math.abs(s.v-v)<Math.abs(b.v-v)?s:b, stops[0]);
+  // Re-render swatches
+  const swatchContainer = document.querySelector(`[oninput*="'${key}'"]`)?.closest('div[style*="margin-bottom:18px"]');
+  if (swatchContainer && nearest) {
+    const swatchDivs = swatchContainer.querySelectorAll('[title^="Referentie"]');
+    swatchDivs.forEach(sw => {
+      const swVal = parseFloat(sw.title.replace('Referentie ',''));
+      sw.style.border = swVal===nearest.v ? '2.5px solid var(--t)' : '1px solid rgba(0,0,0,.15)';
+      sw.style.boxShadow = swVal===nearest.v ? '0 0 0 1px white inset' : 'none';
+    });
   }
   // Update status badge
-  const [lo,hi]=ranges[key]||[0,999];
-  const s=v<lo?'sbad':v>hi?'sw':'so';
-  const lb=s==='so'?'OK':s==='sw'?'Te hoog':'Te laag';
+  const s = v<d.lo?'sbad':v>d.hi?'sw':'so';
+  const lb = s==='so'?'OK':s==='sw'?'Te hoog':'Te laag';
 }
 
 function goToFormWithAI(){
@@ -584,8 +607,8 @@ async function analyzeStrip(b64,mt){
       S.padCrops=null; // will be extracted by canvas
       S.aiOriginal={ph:+data.ph,cl:+data.cl,alk:+data.alk,stab:data.stab||null};
       S.aiDone=true;
-      // Extract actual pad crops from photo using canvas
-      if(S.stripSrc && data.pad_positions) extractPadCrops(S.stripSrc, data.pad_positions);
+      // Extract strip + pad crops from photo using canvas
+      if(S.stripSrc && data.pad_positions) extractAllCrops(S.stripSrc, data.pad_positions, data.strip_bbox||null);
     } else {
       toast((data.error||'AI kon strip niet lezen')+'  — vul handmatig in', 5000);
     }

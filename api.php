@@ -23,7 +23,14 @@ define('UPLOAD_URL',    BASE_URL . '/uploads/');
 
 // Claude Vision: vul in na console.anthropic.com
 define('CLAUDE_API_KEY', '');
-define('APP_VERSION',   '4.6');  // Moet matchen met deploy.php
+
+// Versie = automatisch uit git commit datum (zelfde als deploy.php)
+function getFileVersion(): string {
+    $dir = __DIR__;
+    $git = @shell_exec("cd {$dir} && git log -1 --format='%ci' 2>/dev/null");
+    if ($git && strlen(trim($git)) > 10) return substr(trim($git), 0, 16);
+    return date('Y-m-d H:i', filemtime(__DIR__.'/deploy.php'));
+}
 
 session_start();
 header('Content-Type: application/json; charset=utf-8');
@@ -232,6 +239,7 @@ STEP 4 — Output ONLY this JSON (no other text, no markdown):
   "stab": 100,
   "pad_colors": {"ph": "#E8952A", "cl": "#F8F0F0", "alk": "#5A7A42", "stab": "#8B1A4A"},
   "pad_positions": {"ph": {"x": 50, "y": 18}, "cl": {"x": 50, "y": 35}, "alk": {"x": 50, "y": 52}, "stab": {"x": 50, "y": 70}},
+  "strip_bbox": {"x1": 46, "y1": 60, "x2": 56, "y2": 95},
   "reasoning": {"ph": "medium orange ~7.4", "cl": "colorless ~0 ppm", "alk": "dark green ~120", "stab": "dark maroon ~120-150"}
 }
 
@@ -496,6 +504,7 @@ function linkUserWoning():void {
 // ============================================================
 function appStatus():void {
     requireAdmin();
+    $fileVersion = getFileVersion();
     $dbVersion = null; $lastDeploy = null;
     try {
         $st=db()->query("SELECT key_name,value FROM app_meta WHERE key_name IN ('db_version','last_deploy')");
@@ -503,12 +512,14 @@ function appStatus():void {
             if($r['key_name']==='db_version') $dbVersion=$r['value'];
             if($r['key_name']==='last_deploy') $lastDeploy=$r['value'];
         }
-    } catch(Throwable $e) {}
+    } catch(Throwable $e) {
+        // app_meta tabel bestaat nog niet — deploy.php nog niet gedraaid
+    }
     respond([
-        'file_version' => APP_VERSION,
-        'db_version'   => $dbVersion,
+        'file_version' => $fileVersion,
+        'db_version'   => $dbVersion ?? 'Nog niet gedeployd',
         'last_deploy'  => $lastDeploy,
-        'match'        => $dbVersion === APP_VERSION,
+        'match'        => $dbVersion !== null && $dbVersion === $fileVersion,
     ]);
 }
 
