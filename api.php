@@ -22,14 +22,41 @@ define('UPLOAD_DIR',    __DIR__ . '/uploads/');
 define('UPLOAD_URL',    BASE_URL . '/uploads/');
 
 // Claude Vision: vul in na console.anthropic.com
-define('CLAUDE_API_KEY', '');
+define('CLAUDE_API_KEY', '');  // Vul hier eenmalig in; na deploy wordt uit DB gelezen
 
-// Versie = automatisch uit git commit datum (zelfde als deploy.php)
+// Lees API key: DB heeft voorrang over de constante hierboven
+function getApiKey(): string {
+    $fromConst = CLAUDE_API_KEY;
+    try {
+        $st = db()->prepare("SELECT value FROM app_meta WHERE key_name='claude_api_key'");
+        $st->execute();
+        $v = $st->fetchColumn();
+        if ($v && strlen($v) > 10) return $v;
+    } catch(Throwable $e) {}
+    return $fromConst;
+}
+
+// Versie: probeer git, anders file mtime, anders datum van vandaag
 function getFileVersion(): string {
     $dir = __DIR__;
+    // Probeer git log (werkt alleen als git beschikbaar is in shell)
     $git = @shell_exec("cd {$dir} && git log -1 --format='%ci' 2>/dev/null");
     if ($git && strlen(trim($git)) > 10) return substr(trim($git), 0, 16);
-    return date('Y-m-d H:i', filemtime(__DIR__.'/deploy.php'));
+    // Fallback: mtime van deploy.php
+    $deployFile = __DIR__.'/deploy.php';
+    if (file_exists($deployFile)) return date('Y-m-d H:i', filemtime($deployFile));
+    // Laatste fallback
+    return date('Y-m-d');
+}
+
+// Haal waarde op uit app_meta tabel (met fallback)
+function getMeta(string $key, string $fallback = ''): string {
+    try {
+        $st = db()->prepare("SELECT value FROM app_meta WHERE key_name=?");
+        $st->execute([$key]);
+        $r = $st->fetchColumn();
+        return $r !== false ? $r : $fallback;
+    } catch(Throwable $e) { return $fallback; }
 }
 
 session_start();
@@ -505,21 +532,26 @@ function linkUserWoning():void {
 function appStatus():void {
     requireAdmin();
     $fileVersion = getFileVersion();
+    $tableExists = false;
     $dbVersion = null; $lastDeploy = null;
     try {
-        $st=db()->query("SELECT key_name,value FROM app_meta WHERE key_name IN ('db_version','last_deploy')");
-        foreach($st->fetchAll() as $r) {
-            if($r['key_name']==='db_version') $dbVersion=$r['value'];
-            if($r['key_name']==='last_deploy') $lastDeploy=$r['value'];
+        $check = db()->query("SHOW TABLES LIKE 'app_meta'");
+        $tableExists = $check->rowCount() > 0;
+        if ($tableExists) {
+            $st = db()->query("SELECT key_name,value FROM app_meta WHERE key_name IN ('db_version','last_deploy')");
+            foreach($st->fetchAll() as $r) {
+                if($r['key_name']==='db_version') $dbVersion=$r['value'];
+                if($r['key_name']==='last_deploy') $lastDeploy=$r['value'];
+            }
         }
-    } catch(Throwable $e) {
-        // app_meta tabel bestaat nog niet — deploy.php nog niet gedraaid
-    }
+    } catch(Throwable $e) {}
     respond([
-        'file_version' => $fileVersion,
-        'db_version'   => $dbVersion ?? 'Nog niet gedeployd',
-        'last_deploy'  => $lastDeploy,
-        'match'        => $dbVersion !== null && $dbVersion === $fileVersion,
+        'file_version'  => $fileVersion,
+        'db_version'    => $dbVersion ?? ($tableExists ? 'Tabel leeg' : 'app_meta ontbreekt'),
+        'last_deploy'   => $lastDeploy,
+        'match'         => $dbVersion !== null && $dbVersion === $fileVersion,
+        'table_exists'  => $tableExists,
+        'api_key_set'   => !empty(CLAUDE_API_KEY),
     ]);
 }
 

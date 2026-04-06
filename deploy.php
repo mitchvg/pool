@@ -189,6 +189,21 @@ try {
     $pdo->prepare($ins)->execute(['last_deploy',   date('d-m-Y H:i:s'), date('d-m-Y H:i:s')]);
     out("  ✓ Versie {$VERSION} opgeslagen");
 
+    // Sla API key op in DB (alleen als die nog niet in DB staat)
+    $existing = $pdo->query("SELECT value FROM app_meta WHERE key_name='claude_api_key'")->fetchColumn();
+    if (!$existing) {
+        // Lees uit api.php (tussen aanhalingstekens achter CLAUDE_API_KEY)
+        $apiPhp = @file_get_contents(__DIR__.'/api.php');
+        if (preg_match("/define\('CLAUDE_API_KEY',\s*'([^']+)'\)/", $apiPhp, $m) && strlen($m[1]) > 10) {
+            $pdo->prepare($ins)->execute(['claude_api_key', $m[1], $m[1]]);
+            out("  ✓ API key opgeslagen in database");
+        } else {
+            out("  ℹ API key nog niet ingesteld in api.php");
+        }
+    } else {
+        out("  ✓ API key al aanwezig in database");
+    }
+
 } catch (PDOException $e) {
     out('  ✗ DB verbinding mislukt: ' . $e->getMessage(), true);
 }
