@@ -194,6 +194,33 @@ function autoMigrate(): void {
             }
         }
 
+        // ── Kolom-migraties (veilig bij upgrade van bestaande tabellen) ──────
+        $dbName   = db()->query("SELECT DATABASE()")->fetchColumn();
+        $getColsSql = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
+
+        $userCols = db()->prepare($getColsSql);
+        $userCols->execute([$dbName, 'users']);
+        $userCols = $userCols->fetchAll(PDO::FETCH_COLUMN);
+
+        if (!in_array('code', $userCols)) {
+            db()->exec("ALTER TABLE users ADD COLUMN code VARCHAR(10) DEFAULT NULL");
+            error_log("PoolCheck migrate: kolom 'code' toegevoegd aan users");
+        }
+        if (!in_array('password', $userCols)) {
+            db()->exec("ALTER TABLE users ADD COLUMN password VARCHAR(255) DEFAULT NULL");
+            error_log("PoolCheck migrate: kolom 'password' toegevoegd aan users");
+        }
+
+        $poolCols = db()->prepare($getColsSql);
+        $poolCols->execute([$dbName, 'zwembaden']);
+        $poolCols = $poolCols->fetchAll(PDO::FETCH_COLUMN);
+
+        if (!in_array('code', $poolCols)) {
+            db()->exec("ALTER TABLE zwembaden ADD COLUMN code VARCHAR(10) DEFAULT NULL");
+            error_log("PoolCheck migrate: kolom 'code' toegevoegd aan zwembaden");
+        }
+
         // Sla nieuwe versie op
         $ins = "INSERT INTO app_meta (key_name, value) VALUES (?, ?)
                 ON DUPLICATE KEY UPDATE value = ?, updated_at = NOW()";

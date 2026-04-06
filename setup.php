@@ -140,6 +140,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 FOREIGN KEY (user_id)    REFERENCES users(id)
             )");
 
+            // 5b. Voeg ontbrekende kolommen toe (veilig bij herinstallatie op bestaande DB)
+            $dbName2  = $pdo->query("SELECT DATABASE()")->fetchColumn();
+            $colSql   = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
+
+            $uc = $pdo->prepare($colSql); $uc->execute([$dbName2, 'users']);
+            $uc = $uc->fetchAll(PDO::FETCH_COLUMN);
+            if (!in_array('code',     $uc)) $pdo->exec("ALTER TABLE users ADD COLUMN code VARCHAR(10) DEFAULT NULL");
+            if (!in_array('password', $uc)) $pdo->exec("ALTER TABLE users ADD COLUMN password VARCHAR(255) DEFAULT NULL");
+
+            $pc = $pdo->prepare($colSql); $pc->execute([$dbName2, 'zwembaden']);
+            $pc = $pc->fetchAll(PDO::FETCH_COLUMN);
+            if (!in_array('code', $pc)) $pdo->exec("ALTER TABLE zwembaden ADD COLUMN code VARCHAR(10) DEFAULT NULL");
+
             // 6. Maak admin-gebruiker aan
             $adminCode  = 'UA0'; // eerste gebruiker is altijd UA0
             $adminToken = bin2hex(random_bytes(16));
