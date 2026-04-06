@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zwembad Geschiedenis</title>
+<style>
+:root{--g:#1D9E75;--gd:#0F6E56;--gl:#E1F5EE;--gm:#5DCAA5;--bg:#f4f4f2;--s:#fff;--bd:rgba(0,0,0,.1);--t:#111;--t2:#666;--t3:#aaa;--r:12px;--rs:8px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--t);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+.hdr{background:var(--gd);padding:20px 16px}
+.hdr h1{font-size:20px;font-weight:600;color:#fff}
+.hdr p{font-size:13px;color:var(--gm);margin-top:4px}
+.main{max-width:700px;margin:0 auto;padding:1.5rem 1rem}
+.card{background:var(--s);border-radius:var(--r);border:1px solid var(--bd);margin-bottom:16px;overflow:hidden}
+.card-h{padding:14px 18px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between}
+.card-h h3{font-size:15px;font-weight:600}
+.date-badge{font-size:12px;color:var(--t2)}
+.card-b{padding:14px 18px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.met{background:var(--bg);border-radius:8px;padding:10px 8px;text-align:center}
+.met-v{font-size:18px;font-weight:600}
+.met-l{font-size:11px;color:var(--t2);margin-top:2px}
+.met.ok .met-v{color:#2d6a4f}.met.warn .met-v{color:#7a4f00}.met.bad .met-v{color:#8b1c1c}
+.adv-item{border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:13px;line-height:1.5}
+.adv-ok{background:#eaf3de;border-left:3px solid #52b788}
+.adv-warn{background:#faeeda;border-left:3px solid #f4a261}
+.adv-bad{background:#fcebeb;border-left:3px solid #e63946}
+.adv-t{font-weight:600;margin-bottom:2px}
+.adv-b{color:var(--t2)}
+.adv-d{font-weight:600;color:var(--t);margin-top:4px}
+.tech-line{font-size:12px;color:var(--t3);margin-top:8px}
+.photos{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.photos a img{width:70px;height:55px;object-fit:cover;border-radius:6px}
+.empty{text-align:center;padding:3rem 1rem;color:var(--t3)}
+.empty h2{font-size:18px;margin-bottom:8px}
+.trend{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.trend-item{background:var(--bg);border:1px solid var(--bd);border-radius:20px;padding:4px 12px;font-size:12px}
+.trend-item span{font-weight:600}
+</style>
+</head>
+<body>
+<div class="hdr">
+  <h1 id="client-name">Zwembad Geschiedenis</h1>
+  <p id="client-sub">Overzicht van alle onderhoudsbezoeken</p>
+</div>
+<div class="main" id="main">
+  <div class="empty"><h2>Laden...</h2></div>
+</div>
+
+<script>
+const up = new URLSearchParams(location.search);
+const TOKEN = up.get('h');
+
+function getStatus(val, low, high){
+  if(val===null||val===undefined) return 'ok';
+  if(val<low) return 'bad';
+  if(val>high) return 'warn';
+  return 'ok';
+}
+
+async function load(){
+  if(!TOKEN){ document.getElementById('main').innerHTML='<div class="empty"><h2>Geen toegangstoken</h2><p>Gebruik de link die u ontvangen heeft.</p></div>'; return; }
+  const res = await fetch(`api.php?action=woning_history&token=${TOKEN}`).then(r=>r.json());
+  if(res.error){ document.getElementById('main').innerHTML=`<div class="empty"><h2>Niet gevonden</h2><p>${res.error}</p></div>`; return; }
+
+  const c = res.woning || res.client;
+  const visits = res.visits||[];
+
+  document.getElementById('client-name').textContent = c.name;
+  document.getElementById('client-sub').textContent = `${c.address||''} — ${c.pool_type}`;
+  document.title = `Geschiedenis — ${c.name}`;
+
+  if(!visits.length){
+    document.getElementById('main').innerHTML='<div class="empty"><h2>Nog geen bezoeken</h2><p>Er zijn nog geen onderhoudsbezoeken geregistreerd.</p></div>';
+    return;
+  }
+
+  // Trend van laatste 5 bezoeken
+  const last5 = visits.slice(0,5);
+  const avgPh  = (last5.reduce((s,v)=>s+(+v.ph||0),0)/last5.length).toFixed(1);
+  const avgCl  = (last5.reduce((s,v)=>s+(+v.chlorine||0),0)/last5.length).toFixed(1);
+  const avgAlk = Math.round(last5.reduce((s,v)=>s+(+v.alkalinity||0),0)/last5.length);
+
+  let html = `<div style="margin-bottom:1rem">
+    <p style="font-size:13px;color:var(--t2);margin-bottom:8px">Gemiddelde laatste ${last5.length} bezoeken:</p>
+    <div class="trend">
+      <div class="trend-item">pH <span>${avgPh}</span></div>
+      <div class="trend-item">Chloor <span>${avgCl} ppm</span></div>
+      <div class="trend-item">Alkaliniteit <span>${avgAlk} ppm</span></div>
+      <div class="trend-item">Totaal bezoeken <span>${visits.length}</span></div>
+    </div>
+  </div>`;
+
+  visits.forEach(v => {
+    const advice = v.advice_json?.items||[];
+    const issues = advice.filter(i=>i.level!=='ok').length;
+    const statusStr = issues===0 ? '✅ Alles in orde' : `⚠️ ${issues} aandachtspunt${issues>1?'en':''}`;
+
+    const phSt  = getStatus(+v.ph, 7.2, 7.6);
+    const clSt  = getStatus(+v.chlorine, 0.5, 3.0);
+    const alkSt = getStatus(+v.alkalinity, 80, 120);
+
+    const adviceHtml = advice.map(i=>`
+      <div class="adv-item adv-${i.level}">
+        <div class="adv-t">${i.title}</div>
+        <div class="adv-b">${i.finding || i.body || ''}</div>
+        ${(i.dose_today||i.dose)?`<div class="adv-d">→ ${i.dose_today||i.dose}</div>`:''}
+      </div>`).join('');
+
+    const photos = [v.strip_photo, v.confirm_photo_chemicals, v.confirm_photo_pool].filter(Boolean);
+    const photoHtml = photos.length ? `<div class="photos">${photos.map(u=>`<a href="${u}" target="_blank"><img src="${u}" alt="foto"></a>`).join('')}</div>` : '';
+
+    html += `<div class="card">
+      <div class="card-h">
+        <h3>${new Date(v.visit_date).toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'})}</h3>
+        <span class="date-badge">${statusStr}</span>
+      </div>
+      <div class="card-b">
+        <div class="metrics">
+          <div class="met ${phSt}"><div class="met-v">${v.ph}</div><div class="met-l">pH</div></div>
+          <div class="met ${clSt}"><div class="met-v">${(+v.chlorine).toFixed(1)}</div><div class="met-l">Chloor ppm</div></div>
+          <div class="met ${alkSt}"><div class="met-v">${v.alkalinity}</div><div class="met-l">Alkaliniteit</div></div>
+          <div class="met ok"><div class="met-v">${v.stabilizer||'—'}</div><div class="met-l">Stabilizer</div></div>
+        </div>
+        ${adviceHtml}
+        ${v.notes?`<p style="font-size:13px;color:var(--t2);margin-top:8px"><strong>Notities:</strong> ${v.notes}</p>`:''}
+        ${photoHtml}
+        <div class="tech-line">Monteur: ${v.tech_name||'Onbekend'}</div>
+      </div>
+    </div>`;
+  });
+
+  document.getElementById('main').innerHTML = html;
+}
+
+load();
+</script>
+</body>
+</html>

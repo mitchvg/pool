@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PoolCheck Admin</title>
+<style>
+:root{--g:#1D9E75;--gd:#0F6E56;--gl:#E1F5EE;--bg:#f4f4f2;--s:#fff;--bd:rgba(0,0,0,.1);--t:#111;--t2:#555;--t3:#aaa;--r:12px;--rs:8px;--red:#e24b4a}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--t);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+.lw{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
+.lc{background:var(--s);border-radius:var(--r);padding:2rem;width:100%;max-width:360px;border:1px solid var(--bd)}
+.lc h1{font-size:22px;font-weight:700;color:var(--gd);margin-bottom:4px}
+.lc p{font-size:13px;color:var(--t2);margin-bottom:1.5rem}
+.lc input{width:100%;padding:11px 13px;border:1.5px solid var(--bd);border-radius:var(--rs);font-size:15px;margin-bottom:10px;outline:none}
+.lc input:focus{border-color:var(--g)}
+.layout{display:flex;min-height:100vh}
+.side{width:205px;background:var(--gd);padding:1.25rem 1rem;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.side-logo{display:flex;align-items:center;gap:9px;margin-bottom:1.5rem}
+.side-logo span{font-size:20px}
+.side-logo h1{font-size:15px;font-weight:700;color:#fff}
+.nav{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:var(--rs);cursor:pointer;color:rgba(255,255,255,.7);font-size:13px;background:none;border:none;width:100%;text-align:left}
+.nav:hover,.nav.on{background:rgba(255,255,255,.15);color:#fff}
+.nav em{font-size:15px;width:18px;text-align:center;font-style:normal}
+.spacer{flex:1}
+.main{flex:1;padding:1.75rem;overflow-y:auto;max-width:1000px}
+.pg{display:none}.pg.v{display:block}
+h2{font-size:19px;font-weight:700;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:1.5rem}
+.stat{background:var(--s);border-radius:var(--r);border:1px solid var(--bd);padding:.9rem 1rem}
+.stat-v{font-size:26px;font-weight:700;color:var(--gd)}
+.stat-l{font-size:12px;color:var(--t2);margin-top:2px}
+.card{background:var(--s);border-radius:var(--r);border:1px solid var(--bd);overflow:hidden;margin-bottom:1rem}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{padding:9px 12px;text-align:left;font-weight:600;color:var(--t2);border-bottom:1.5px solid var(--bd);white-space:nowrap}
+td{padding:9px 12px;border-bottom:1px solid var(--bd);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafaf8}
+.empty{text-align:center;color:var(--t3);padding:2rem;font-size:13px}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
+.ok{background:#eaf3de;color:#2d6a4f}.warn{background:#faeeda;color:#7a4f00}.bad{background:#fcebeb;color:#8b1c1c}
+.role{background:#e8f4fd;color:#1565c0}.grey{background:#f0f0f0;color:#888}
+.btn{padding:8px 16px;background:var(--g);color:#fff;border:none;border-radius:var(--rs);font-size:13px;font-weight:600;cursor:pointer}
+.btn:hover{opacity:.9}
+.bsm{padding:4px 10px;font-size:12px;background:var(--gl);color:var(--gd);border:none;border-radius:6px;cursor:pointer}
+.bsm:hover{background:#c5e8d8}
+.bout{background:transparent;border:1px solid var(--bd);color:var(--t2)}
+.fg{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.fg.h{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fg label,.fg > label{font-size:12px;font-weight:600;color:var(--t2)}
+.fg input,.fg select,.fg textarea{padding:9px 11px;border:1.5px solid var(--bd);border-radius:var(--rs);font-size:14px;background:#fff;color:var(--t);outline:none;width:100%}
+.fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--g)}
+.fg .hint{font-size:11px;color:var(--t3)}
+.fg textarea{resize:vertical;min-height:56px;font-size:13px}
+.rcb{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px}
+.rcb input{width:auto;margin:0}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;padding:1rem}
+.modal{background:#fff;border-radius:var(--r);padding:1.5rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto}
+.modal h3{font-size:16px;font-weight:700;margin-bottom:1rem}
+.mbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--bd)}
+.lb{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:7px 10px;font-size:12px;word-break:break-all;color:var(--t2);font-family:monospace}
+.lrow{display:flex;align-items:center;gap:6px;margin-top:4px}
+.lrow .lb{flex:1}
+.ld{display:flex;align-items:center;gap:8px;padding:1.5rem;font-size:13px;color:var(--t2)}
+.sp{width:16px;height:16px;border:2px solid var(--bd);border-top-color:var(--g);border-radius:50%;animation:s .7s linear infinite}
+@keyframes s{to{transform:rotate(360deg)}}
+.toast{position:fixed;bottom:20px;right:20px;background:#111;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;z-index:200;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+
+<div class="lw" id="lp">
+  <div class="lc">
+    <h1>💧 PoolCheck Pro</h1>
+    <p>Beheerderspaneel — inloggen</p>
+    <input type="password" id="pw" placeholder="Wachtwoord" onkeydown="if(event.key==='Enter')login()">
+    <button class="btn" style="width:100%;padding:12px;font-size:15px" onclick="login()">Inloggen</button>
+    <p id="lerr" style="color:var(--red);font-size:13px;margin-top:8px;display:none">Verkeerd wachtwoord</p>
+  </div>
+</div>
+
+<div class="layout" id="ap" style="display:none">
+  <nav class="side">
+    <div class="side-logo"><span>💧</span><h1>PoolCheck</h1></div>
+    <button class="nav on" onclick="nav('dashboard',this)"><em>📊</em> Dashboard</button>
+    <button class="nav" onclick="nav('woningen',this)"><em>🏊</em> Woningen</button>
+    <button class="nav" onclick="nav('users',this)"><em>👥</em> Gebruikers</button>
+    <button class="nav" onclick="nav('visits',this)"><em>📋</em> Bezoeken</button>
+    <div class="spacer"></div>
+    <button class="nav" onclick="window.open('update.php','_blank')"><em>📦</em> Updater</button>
+    <button class="nav" onclick="logout()"><em>🚪</em> Uitloggen</button>
+  </nav>
+  <main class="main">
+    <div class="pg v" id="pg-dashboard">
+      <h2>Dashboard</h2>
+      <div class="stats" id="stats"><div class="ld"><div class="sp"></div>Laden...</div></div>
+      <div class="card" id="rc"><div class="ld"><div class="sp"></div>Laden...</div></div>
+    </div>
+    <div class="pg" id="pg-woningen">
+      <h2>Woningen <button class="btn" onclick="addWoning()">+ Woning toevoegen</button></h2>
+      <div class="card" id="tw"><div class="ld"><div class="sp"></div>Laden...</div></div>
+    </div>
+    <div class="pg" id="pg-users">
+      <h2>Gebruikers <button class="btn" onclick="addUser()">+ Gebruiker toevoegen</button></h2>
+      <div class="card" id="tu"><div class="ld"><div class="sp"></div>Laden...</div></div>
+    </div>
+    <div class="pg" id="pg-visits">
+      <h2>Bezoeken</h2>
+      <div class="card" id="tv"><div class="ld"><div class="sp"></div>Laden...</div></div>
+    </div>
+  </main>
+</div>
+
+<div class="overlay" id="ov" style="display:none" onclick="if(event.target===this)closeM()">
+  <div class="modal" id="mb"></div>
+</div>
+<div class="toast" id="t"></div>
+
+<script>
+const A = 'api.php';
+let W = [], U = [], V = [];
+
+// ─── API ───────────────────────────────────────────
+async function call(action, method, body) {
+  const r = await fetch(A + '?action=' + action, {
+    method: method || 'GET',
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const d = await r.json();
+  if (d.error) throw new Error(d.error);
+  return d;
+}
+
+// ─── AUTH ──────────────────────────────────────────
+async function login() {
+  try {
+    await call('admin_login', 'POST', { password: document.getElementById('pw').value });
+    showApp();
+  } catch { document.getElementById('lerr').style.display = 'block'; }
+}
+async function logout() { await call('admin_logout', 'POST').catch(() => {}); location.reload(); }
+async function checkLogin() {
+  const d = await call('admin_check').catch(() => ({ logged_in: false }));
+  if (d.logged_in) showApp();
+}
+
+async function showApp() {
+  document.getElementById('lp').style.display = 'none';
+  document.getElementById('ap').style.display = 'flex';
+  await reload();
+}
+
+async function reload() {
+  // Load each independently so one failure doesn't block others
+  const errHtml = (msg) => `<div style="padding:1.5rem;color:var(--red);font-size:13px">❌ ${msg}<br><br>
+    <a href="debug.php" target="_blank" style="color:var(--gd)">Open debug.php</a> voor diagnose &nbsp;|&nbsp;
+    <a href="migrate.php" target="_blank" style="color:var(--gd)">Voer migrate.php uit</a> als tabellen ontbreken</div>`;
+
+  try { const d = await call('admin_woningen'); W = d.woningen || []; drawWoningen(); }
+  catch(e) { document.getElementById('tw').innerHTML = errHtml('Woningen laden mislukt: ' + e.message); }
+
+  try { const d = await call('admin_users'); U = d.users || []; drawUsers(); }
+  catch(e) { document.getElementById('tu').innerHTML = errHtml('Gebruikers laden mislukt: ' + e.message); }
+
+  try { const d = await call('admin_visits'); V = d.visits || []; drawVisits(); }
+  catch(e) { document.getElementById('tv').innerHTML = errHtml('Bezoeken laden mislukt: ' + e.message); }
+
+  drawDash();
+}
+
+// ─── NAV ───────────────────────────────────────────
+function nav(p, btn) {
+  document.querySelectorAll('.nav').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  document.querySelectorAll('.pg').forEach(x => x.classList.remove('v'));
+  document.getElementById('pg-' + p).classList.add('v');
+}
+
+// ─── DASHBOARD ─────────────────────────────────────
+function drawDash() {
+  const wk = V.filter(v => new Date(v.visit_date) >= new Date(Date.now() - 7 * 86400000)).length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat"><div class="stat-v">${W.filter(w => w.active == 1).length}</div><div class="stat-l">Actieve woningen</div></div>
+    <div class="stat"><div class="stat-v">${U.filter(u => u.active == 1).length}</div><div class="stat-l">Gebruikers</div></div>
+    <div class="stat"><div class="stat-v">${V.length}</div><div class="stat-l">Totaal bezoeken</div></div>
+    <div class="stat"><div class="stat-v">${wk}</div><div class="stat-l">Bezoeken afgelopen week</div></div>`;
+  document.getElementById('rc').innerHTML = visitTable(V.slice(0, 10));
+}
+
+// ─── WONINGEN ──────────────────────────────────────
+function drawWoningen() {
+  if (!W.length) { document.getElementById('tw').innerHTML = '<div class="empty">Nog geen woningen. Klik "+ Woning toevoegen" om te beginnen.</div>'; return; }
+  document.getElementById('tw').innerHTML = `<table>
+    <thead><tr><th>Naam</th><th>Eigenaar / e-mail</th><th>Type &amp; volume</th><th>Poolcode</th><th>Links</th><th></th></tr></thead>
+    <tbody>${W.map(w => `<tr>
+      <td><b>${e(w.name)}</b>${w.active != 1 ? ' <span class="badge grey">inactief</span>' : ''}<br><small style="color:var(--t3)">${e(w.address || '')}</small></td>
+      <td>${e(w.owner_name || '—')}<br><small style="color:var(--t2)">${e(w.email || '')}</small></td>
+      <td>${e(w.pool_type)}<br><small>${Math.round(w.volume_liters / 1000)}m³</small></td>
+      <td><code style="background:#f0f0ee;padding:2px 6px;border-radius:4px;font-family:monospace;font-size:13px;letter-spacing:.05em">${w.pool_code}</code></td>
+      <td style="font-size:12px;line-height:2.2">
+        <span class="bsm" onclick="showQR('${e(w.name)}','${w.qr_url}')">QR tonen</span> &nbsp;
+        <a href="${w.history_url}" target="_blank" style="color:var(--gd)">Geschiedenis</a>
+      </td>
+      <td><button class="bsm" onclick="editWoning(${w.id})">Bewerken</button></td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function showQR(name, url) {
+  const qr = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+  openM(`<h3>QR code — ${name}</h3>
+    <div style="text-align:center;margin:1rem 0">
+      <img src="${qr}" style="width:180px;height:180px;border:3px solid var(--gd);border-radius:8px;padding:4px" alt="QR">
+      <p style="font-size:12px;color:var(--t2);margin-top:8px">Print en lamineer — bevestig bij het zwembad</p>
+    </div>
+    <div class="lrow"><div class="lb">${url}</div><button class="bsm" onclick="cp('${url}')">Kopieer</button></div>
+    <div style="margin-top:8px;text-align:center"><a href="${qr}" download="qr.png" class="btn bsm" style="font-size:13px">Download PNG</a></div>
+    <div class="mbtns"><button class="btn bout" onclick="closeM()">Sluiten</button></div>`);
+}
+
+function addWoning() {
+  openM(`<h3>Woning toevoegen</h3>
+    <div class="fg h"><div class="fg"><label>Naam *</label><input id="a-n" placeholder="Villa Janssen"></div><div class="fg"><label>Eigenaar</label><input id="a-o" placeholder="Peter Janssen"></div></div>
+    <div class="fg h"><div class="fg"><label>E-mail eigenaar</label><input id="a-e" type="email" placeholder="klant@email.com"></div><div class="fg"><label>Telefoon</label><input id="a-ph" placeholder="06-12345678"></div></div>
+    <div class="fg"><label>Adres</label><input id="a-ad" placeholder="Straat 1, Stad"></div>
+    <div class="fg h"><div class="fg"><label>Type zwembad</label><select id="a-t">${poolTypes()}</select></div><div class="fg"><label>Volume (liter)</label><input id="a-v" type="number" value="40000"><div class="hint">Alleen beheerder kan dit wijzigen</div></div></div>
+    <div class="fg"><label>Notities</label><textarea id="a-nt" placeholder="Bijzonderheden..."></textarea></div>
+    <div class="mbtns"><button class="btn bout" onclick="closeM()">Annuleren</button><button class="btn" onclick="saveAddWoning()">Toevoegen</button></div>`);
+}
+
+async function saveAddWoning() {
+  const d = { name: v('a-n'), owner_name: v('a-o'), email: v('a-e'), phone: v('a-ph'), address: v('a-ad'), pool_type: v('a-t'), volume_liters: v('a-v'), notes: v('a-nt') };
+  if (!d.name) { toast('Naam is verplicht'); return; }
+  try {
+    const r = await call('add_woning', 'POST', d);
+    await reload();
+    closeM();
+    showQR(d.name, r.qr_url);
+    toast('Woning toegevoegd!');
+  } catch (err) { toast('Fout: ' + err.message); }
+}
+
+function editWoning(id) {
+  const w = W.find(x => x.id == id); if (!w) return;
+  openM(`<h3>Woning bewerken</h3>
+    <div class="fg h"><div class="fg"><label>Naam *</label><input id="e-n" value="${e(w.name)}"></div><div class="fg"><label>Eigenaar</label><input id="e-o" value="${e(w.owner_name || '')}"></div></div>
+    <div class="fg h"><div class="fg"><label>E-mail</label><input id="e-e" type="email" value="${e(w.email || '')}"></div><div class="fg"><label>Telefoon</label><input id="e-ph" value="${e(w.phone || '')}"></div></div>
+    <div class="fg"><label>Adres</label><input id="e-ad" value="${e(w.address || '')}"></div>
+    <div class="fg h"><div class="fg"><label>Type</label><select id="e-t">${poolTypes(w.pool_type)}</select></div><div class="fg"><label>Volume (liter)</label><input id="e-v" type="number" value="${w.volume_liters}"><div class="hint">Alleen beheerder kan dit wijzigen</div></div></div>
+    <div class="fg h"><div class="fg"><label>Status</label><select id="e-ac"><option value="1"${w.active == 1 ? ' selected' : ''}>Actief</option><option value="0"${w.active != 1 ? ' selected' : ''}>Inactief</option></select></div><div></div></div>
+    <div class="fg"><label>Notities</label><textarea id="e-nt">${e(w.notes || '')}</textarea></div>
+    <div style="background:var(--bg);border-radius:8px;padding:10px;font-size:12px;margin-bottom:10px">
+      <b>Poolcode:</b> <code style="background:#fff;padding:2px 6px;border-radius:4px">${w.pool_code}</code> &nbsp;
+      <span class="bsm" onclick="showQR('${e(w.name)}','${w.qr_url}')" style="cursor:pointer">Toon QR</span>
+    </div>
+    <div class="mbtns"><button class="btn bout" onclick="closeM()">Annuleren</button><button class="btn" onclick="saveEditWoning(${id})">Opslaan</button></div>`);
+}
+
+async function saveEditWoning(id) {
+  const d = { id, name: v('e-n'), owner_name: v('e-o'), email: v('e-e'), phone: v('e-ph'), address: v('e-ad'), pool_type: v('e-t'), volume_liters: v('e-v'), notes: v('e-nt'), active: v('e-ac') };
+  try { await call('update_woning', 'POST', d); closeM(); await reload(); toast('Opgeslagen!'); }
+  catch (err) { toast('Fout: ' + err.message); }
+}
+
+// ─── USERS ─────────────────────────────────────────
+function drawUsers() {
+  if (!U.length) { document.getElementById('tu').innerHTML = '<div class="empty">Nog geen gebruikers.</div>'; return; }
+  document.getElementById('tu').innerHTML = `<table>
+    <thead><tr><th>Naam</th><th>Rollen</th><th>E-mail</th><th>Woningen (klant)</th><th>Magic link</th><th></th></tr></thead>
+    <tbody>${U.map(u => {
+      const roles = u.roles.split(',').map(r => `<span class="badge role">${r.trim()}</span>`).join(' ');
+      const wl = (u.woningen || []).map(w => w.name).join(', ') || '—';
+      return `<tr>
+        <td><b>${e(u.name)}</b>${u.active != 1 ? ' <span class="badge grey">inactief</span>' : ''}</td>
+        <td>${roles}</td>
+        <td style="font-size:12px">${e(u.email)}</td>
+        <td style="font-size:12px;color:var(--t2)">${e(wl)}</td>
+        <td><div class="lrow"><div class="lb" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.magic_link}</div><button class="bsm" onclick="cp('${u.magic_link}')">Kopieer</button></div></td>
+        <td><button class="bsm" onclick="editUser(${u.id})">Bewerken</button></td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function addUser() {
+  const wOpts = W.map(w => `<label class="rcb"><input type="checkbox" class="nuw" value="${w.id}"> ${e(w.name)}</label>`).join('');
+  openM(`<h3>Gebruiker toevoegen</h3>
+    <div class="fg h"><div class="fg"><label>Naam *</label><input id="nu-n" placeholder="Tycho Hombergen"></div><div class="fg"><label>E-mail *</label><input id="nu-e" type="email" placeholder="tycho@email.com"></div></div>
+    <div class="fg"><label>Telefoon</label><input id="nu-ph" placeholder="06-12345678"></div>
+    <div class="fg"><label>Rollen</label>
+      <label class="rcb"><input type="checkbox" id="nr-m" checked> <b>Monteur</b> — kan bezoeken invoeren voor alle woningen</label>
+      <label class="rcb"><input type="checkbox" id="nr-k"> <b>Klant</b> — ziet geschiedenis eigen woning, kan zelf invoeren</label>
+      <label class="rcb"><input type="checkbox" id="nr-a"> <b>Admin</b> — toegang tot beheerderspaneel</label>
+    </div>
+    ${wOpts ? `<div class="fg"><label>Koppel aan woningen (voor klant-rol)</label>${wOpts}</div>` : ''}
+    <div class="mbtns"><button class="btn bout" onclick="closeM()">Annuleren</button><button class="btn" onclick="saveAddUser()">Toevoegen</button></div>`);
+}
+
+async function saveAddUser() {
+  const roles = [['nr-m','monteur'],['nr-k','klant'],['nr-a','admin']].filter(([id]) => document.getElementById(id)?.checked).map(([,r]) => r).join(',') || 'monteur';
+  const wids = [...document.querySelectorAll('.nuw:checked')].map(i => +i.value);
+  const d = { name: v('nu-n'), email: v('nu-e'), phone: v('nu-ph'), roles, woning_ids: wids };
+  if (!d.name || !d.email) { toast('Naam en e-mail zijn verplicht'); return; }
+  try {
+    const r = await call('add_user', 'POST', d);
+    await reload(); closeM();
+    openM(`<h3>Gebruiker toegevoegd!</h3>
+      <p style="font-size:13px;color:var(--t2);margin-bottom:10px">Stuur deze magic link naar <b>${e(d.name)}</b>. Sla op als bladwijzer of homescreen-icoon:</p>
+      <div class="lrow"><div class="lb">${r.magic_link}</div><button class="bsm" onclick="cp('${r.magic_link}')">Kopieer</button></div>
+      <div class="mbtns"><button class="btn" onclick="closeM()">OK</button></div>`);
+    toast('Gebruiker toegevoegd!');
+  } catch (err) { toast('Fout: ' + err.message); }
+}
+
+function editUser(id) {
+  const u = U.find(x => x.id == id); if (!u) return;
+  const ur = u.roles.split(',').map(r => r.trim());
+  const wOpts = W.map(w => {
+    const linked = (u.woningen || []).some(uw => uw.id == w.id);
+    return `<label class="rcb"><input type="checkbox" class="euw" value="${w.id}"${linked ? ' checked' : ''}> ${e(w.name)}</label>`;
+  }).join('');
+  openM(`<h3>Gebruiker bewerken</h3>
+    <div class="fg h"><div class="fg"><label>Naam *</label><input id="eu-n" value="${e(u.name)}"></div><div class="fg"><label>E-mail *</label><input id="eu-e" value="${e(u.email)}"></div></div>
+    <div class="fg h"><div class="fg"><label>Telefoon</label><input id="eu-ph" value="${e(u.phone || '')}"></div><div class="fg"><label>Status</label><select id="eu-ac"><option value="1"${u.active == 1 ? ' selected' : ''}>Actief</option><option value="0"${u.active != 1 ? ' selected' : ''}>Inactief</option></select></div></div>
+    <div class="fg"><label>Rollen</label>
+      <label class="rcb"><input type="checkbox" id="er-m"${ur.includes('monteur') ? ' checked' : ''}> Monteur</label>
+      <label class="rcb"><input type="checkbox" id="er-k"${ur.includes('klant')   ? ' checked' : ''}> Klant</label>
+      <label class="rcb"><input type="checkbox" id="er-a"${ur.includes('admin')   ? ' checked' : ''}> Admin</label>
+    </div>
+    ${wOpts ? `<div class="fg"><label>Gekoppelde woningen</label>${wOpts}</div>` : ''}
+    <div style="background:var(--bg);border-radius:8px;padding:9px;font-size:12px;margin:8px 0">
+      <b>Magic link:</b><div class="lrow" style="margin-top:4px"><div class="lb">${u.magic_link}</div><button class="bsm" onclick="cp('${u.magic_link}')">Kopieer</button></div>
+    </div>
+    <div class="mbtns"><button class="btn bout" onclick="closeM()">Annuleren</button><button class="btn" onclick="saveEditUser(${id})">Opslaan</button></div>`);
+}
+
+async function saveEditUser(id) {
+  const roles = [['er-m','monteur'],['er-k','klant'],['er-a','admin']].filter(([i]) => document.getElementById(i)?.checked).map(([,r]) => r).join(',') || 'monteur';
+  const wids = [...document.querySelectorAll('.euw:checked')].map(i => +i.value);
+  const d = { id, name: v('eu-n'), email: v('eu-e'), phone: v('eu-ph'), roles, active: v('eu-ac') };
+  try {
+    await call('update_user', 'POST', d);
+    for (const wid of wids) await call('link_user_woning', 'POST', { user_id: id, woning_id: wid }).catch(() => {});
+    closeM(); await reload(); toast('Opgeslagen!');
+  } catch (err) { toast('Fout: ' + err.message); }
+}
+
+// ─── VISITS ────────────────────────────────────────
+function visitTable(vs) {
+  if (!vs.length) return '<div class="empty">Nog geen bezoeken</div>';
+  return `<table>
+    <thead><tr><th>Datum</th><th>Woning</th><th>Monteur</th><th>pH</th><th>Chloor</th><th>Status</th><th></th></tr></thead>
+    <tbody>${vs.map(v => {
+      const items = v.advice_json?.items || [];
+      const iss = items.filter(i => i.level !== 'ok').length;
+      const b = iss === 0 ? '<span class="badge ok">Alles OK</span>' : `<span class="badge warn">${iss} punt${iss > 1 ? 'en' : ''}</span>`;
+      return `<tr><td>${v.visit_date}</td><td>${e(v.woning_name || '—')}</td><td>${e(v.user_name || '—')}</td><td>${v.ph}</td><td>${v.chlorine} ppm</td><td>${b}</td><td><button class="bsm" onclick='showVisit(${JSON.stringify(v).replace(/'/g, "\\'")} )'>Details</button></td></tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function drawVisits() { document.getElementById('tv').innerHTML = visitTable(V); }
+
+function showVisit(v) {
+  const items = v.advice_json?.items || [];
+  const iHtml = items.map(i => {
+    const bg = i.level==='ok'?'#eaf3de':i.level==='warn'?'#faeeda':'#fcebeb';
+    const c = i.level==='ok'?'#2d6a4f':i.level==='warn'?'#7a4f00':'#8b1c1c';
+    const dose = (i.dose_today || i.dose) ? `<br><b>→ ${i.dose_today || i.dose}</b>` : '';
+    return `<div style="background:${bg};border-left:3px solid ${c};padding:8px 11px;border-radius:4px;margin-bottom:5px;font-size:13px"><b style="color:${c}">${i.title}</b>${dose}</div>`;
+  }).join('');
+  const photos = [v.strip_photo, v.confirm_photo_chemicals, v.confirm_photo_pool].filter(Boolean);
+  openM(`<h3>Bezoek #${v.id} — ${e(v.woning_name||'—')}</h3>
+    <p style="font-size:12px;color:var(--t2);margin-bottom:12px">${v.visit_date} ${v.visit_time} — ${e(v.user_name||'Onbekend')}</p>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
+      ${[['pH',v.ph],['Chloor',v.chlorine+' ppm'],['Alk.',v.alkalinity+' ppm'],['Stab.',v.stabilizer?v.stabilizer+' ppm':'—']].map(([l,val])=>`<div style="background:var(--bg);padding:9px 6px;border-radius:8px;text-align:center"><div style="font-size:17px;font-weight:700">${val}</div><div style="font-size:11px;color:var(--t2)">${l}</div></div>`).join('')}
+    </div>
+    ${iHtml}
+    ${v.notes?`<p style="font-size:12px;color:var(--t2);margin-top:8px"><b>Notities:</b> ${e(v.notes)}</p>`:''}
+    ${photos.length?`<div style="margin-top:10px">${photos.map(u=>`<a href="${u}" target="_blank"><img src="${u}" style="width:80px;height:65px;object-fit:cover;border-radius:6px;margin-right:6px"></a>`).join('')}</div>`:''}
+    <div class="mbtns"><button class="btn bout" onclick="closeM()">Sluiten</button></div>`);
+}
+
+// ─── UTILS ─────────────────────────────────────────
+function poolTypes(sel) {
+  return ['Privé buitenbad','Privé binnenbad','Hotel binnenbad','Privé spa','Publiek zwembad'].map(t => `<option${t===sel?' selected':''}>${t}</option>`).join('');
+}
+function v(id) { return document.getElementById(id)?.value || ''; }
+function e(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function openM(h) { document.getElementById('mb').innerHTML = h; document.getElementById('ov').style.display = 'flex'; }
+function closeM() { document.getElementById('ov').style.display = 'none'; }
+function cp(t) { navigator.clipboard?.writeText(t).then(() => toast('Gekopieerd!')).catch(() => {}); }
+function toast(m) { const t=document.getElementById('t'); t.textContent=m; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2500); }
+
+checkLogin();
+</script>
+</body>
+</html>

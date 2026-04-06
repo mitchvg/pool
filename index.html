@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>PoolCheck Pro</title>
+<style>
+:root{--g:#1D9E75;--gd:#0F6E56;--gl:#E1F5EE;--gm:#5DCAA5;--am:#EF9F27;--al:#FAEEDA;--rd:#E24B4A;--rl:#FCEBEB;--ok:#EAF3DE;--lime:#2d6a4f;--bg:#f4f4f2;--s:#fff;--bd:rgba(0,0,0,.1);--t:#111;--t2:#666;--t3:#aaa;--r:12px;--rs:8px}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--t);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+.app{max-width:480px;margin:0 auto;padding-bottom:5rem}
+.hdr{background:var(--gd);padding:13px 16px 9px;position:sticky;top:0;z-index:10}
+.hdr-r{display:flex;align-items:center;gap:10px}
+.hdr-ic{width:32px;height:32px;background:rgba(255,255,255,.2);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+.hdr h1{font-size:15px;font-weight:600;color:#fff}
+.hdr p{font-size:11px;color:rgba(255,255,255,.7)}
+.steps{display:flex;gap:4px;margin-top:9px}
+.sd{flex:1;height:3px;border-radius:2px;background:rgba(255,255,255,.25);transition:background .3s}
+.sd.a{background:#fff}.sd.d{background:var(--gm)}
+.sec{padding:13px}
+
+/* AUTH */
+.auth{min-height:65vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.5rem 1rem;text-align:center}
+.auth-icon{font-size:52px;margin-bottom:.75rem}
+.auth-title{font-size:19px;font-weight:700;color:var(--gd);margin-bottom:6px}
+.auth-sub{font-size:13px;color:var(--t2);line-height:1.7;margin-bottom:1.25rem;max-width:320px}
+.auth-box{background:var(--s);border:1px solid var(--bd);border-radius:var(--r);padding:1.25rem;width:100%;max-width:340px;text-align:left;margin-bottom:10px}
+.auth-box h3{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--t)}
+.code-input{display:flex;gap:8px;margin-top:6px}
+.code-input input{flex:1;padding:10px 12px;border:1.5px solid var(--bd);border-radius:var(--rs);font-size:15px;letter-spacing:.08em;text-transform:uppercase;font-family:monospace;outline:none}
+.code-input input:focus{border-color:var(--g)}
+.code-input button{padding:10px 14px;background:var(--g);color:#fff;border:none;border-radius:var(--rs);font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap}
+code{background:#f0f0ee;padding:2px 7px;border-radius:4px;font-size:12px;color:var(--gd);font-family:monospace;word-break:break-all}
+
+/* BADGES */
+.badge-user{display:flex;align-items:center;gap:10px;background:var(--gl);border-radius:var(--rs);padding:10px 13px;margin-bottom:10px}
+.badge-av{width:34px;height:34px;border-radius:50%;background:var(--gd);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}
+.badge-name{font-size:14px;font-weight:600;color:var(--gd)}
+.badge-sub{font-size:11px;color:#3d9970}
+.badge-woning{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rs);padding:10px 13px;margin-bottom:10px}
+.badge-woning .bw-av{width:34px;height:34px;border-radius:8px;background:var(--gd);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.bw-name{font-size:14px;font-weight:600}
+.bw-meta{font-size:11px;color:var(--t2);margin-top:1px}
+
+/* CARD */
+.card{background:var(--s);border-radius:var(--r);border:1px solid var(--bd);margin-bottom:11px;overflow:hidden}
+.cb{padding:13px 15px}
+.ct{font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:9px}
+
+/* PHOTO EXAMPLE */
+.photo-example{background:#1a2a3a;border-radius:var(--rs);padding:10px;margin-bottom:12px;position:relative}
+.photo-example svg{width:100%;height:auto;display:block;border-radius:6px}
+.photo-label{font-size:11px;color:rgba(255,255,255,.7);text-align:center;margin-top:6px}
+
+/* UPLOAD */
+.uz{border:2px dashed var(--bd);border-radius:var(--rs);padding:1.5rem 1rem;text-align:center;cursor:pointer;position:relative}
+.uz:active{border-color:var(--g)}
+.uz input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.pimg{width:100%;max-height:180px;object-fit:cover;border-radius:var(--rs);margin-bottom:10px;display:block}
+
+/* AI */
+.ai-z{background:var(--bg);border-radius:var(--rs);padding:11px 13px;margin-bottom:11px}
+.ai-h{display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.ai-b{background:var(--gl);color:var(--gd);font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px}
+.pr{display:flex;align-items:center;padding:8px 0;border-bottom:1px solid var(--bd)}
+.pr:last-child{border-bottom:none}
+.pl{font-size:12px;color:var(--t2);width:115px;flex-shrink:0}
+.pv{font-size:16px;font-weight:700;flex:1}
+.sb{font-size:10px;font-weight:700;padding:2px 9px;border-radius:20px}
+.so{background:var(--ok);color:var(--lime)}.sw{background:var(--al);color:#7a4f00}.sbad{background:var(--rl);color:#8b1c1c}
+
+/* FORM */
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:9px}
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg.full{grid-column:1/-1}
+.fg label{font-size:11px;font-weight:700;color:var(--t2)}
+.fg input,.fg textarea{padding:10px 11px;border:1.5px solid var(--bd);border-radius:var(--rs);font-size:16px;background:#fff;color:var(--t);outline:none;transition:border-color .15s}
+.fg input:focus{border-color:var(--g)}
+.fg input[readonly]{background:#f5f5f3;color:var(--t2)}
+.fg textarea{resize:vertical;min-height:60px;font-size:13px}
+.fg .nh{font-size:10px;color:var(--t3)}
+
+/* EXPERT HEADER */
+.expert{background:linear-gradient(135deg,#0F6E56,#1D9E75);border-radius:var(--r);padding:14px 16px;margin-bottom:11px;color:#fff}
+.ex-name{font-size:17px;font-weight:700;margin-bottom:3px}
+.ex-sub{font-size:12px;color:var(--gm)}
+
+/* FINDINGS */
+.fb{border-radius:var(--rs);padding:13px 15px;margin-bottom:9px}
+.fb-ok{background:var(--ok);border-left:4px solid #52b788}
+.fb-warn{background:var(--al);border-left:4px solid var(--am)}
+.fb-bad{background:var(--rl);border-left:4px solid var(--rd)}
+.fb-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.fb-param{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.fb-ok .fb-param{color:var(--lime)}.fb-warn .fb-param{color:#7a4f00}.fb-bad .fb-param{color:#8b1c1c}
+.fb-val{font-size:21px;font-weight:800}
+.fb-prev{font-size:11px;color:var(--t2);margin-bottom:5px}
+.fb-text{font-size:13px;color:var(--t2);line-height:1.5;margin-bottom:6px}
+.fb-dose{background:rgba(0,0,0,.06);border-radius:5px;padding:7px 11px;font-size:13px;font-weight:700}
+.fb-next{font-size:11px;color:var(--t2);margin-top:4px;font-style:italic}
+.fb-limit{font-size:11px;color:var(--t3);margin-top:3px}
+.fb-anom{background:#fff3cd;border:1px solid #ffc107;border-radius:5px;padding:7px 11px;margin-top:6px;font-size:11px;color:#856404}
+
+/* CONFIRM PHOTOS */
+.pg{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.ps{border:2px dashed var(--bd);border-radius:var(--rs);padding:1rem .75rem;text-align:center;cursor:pointer;position:relative}
+.ps.done{border-style:solid;border-color:var(--g);background:var(--gl)}
+.ps input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.pe{font-size:22px;display:block;margin-bottom:4px}
+.pp{font-size:11px;color:var(--t2);line-height:1.4}
+.ps.done .pp{color:var(--gd);font-weight:600}
+
+/* WONING LIST */
+.wlist{display:flex;flex-direction:column;gap:6px}
+.witem{display:flex;align-items:center;gap:11px;padding:11px 13px;background:var(--s);border:1px solid var(--bd);border-radius:var(--rs);cursor:pointer;transition:border-color .15s}
+.witem:active{border-color:var(--g)}
+.witem-av{width:38px;height:38px;border-radius:8px;background:var(--gl);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:var(--gd);flex-shrink:0}
+.witem-name{font-size:14px;font-weight:600}
+.witem-meta{font-size:11px;color:var(--t2);margin-top:1px}
+
+/* BUTTONS */
+.btn{width:100%;padding:13px;background:var(--g);color:#fff;border:none;border-radius:var(--rs);font-size:15px;font-weight:700;cursor:pointer;margin-top:5px}
+.btn:active{opacity:.85}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btno{width:100%;padding:10px;background:transparent;color:var(--t2);border:1.5px solid var(--bd);border-radius:var(--rs);font-size:13px;cursor:pointer;margin-top:7px}
+.btno:active{background:var(--bg)}
+.bk{display:flex;align-items:center;gap:5px;font-size:13px;color:var(--t2);cursor:pointer;background:none;border:none;padding:0 0 12px}
+.ld{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--t2);padding:7px 0}
+.sp{width:17px;height:17px;border:2px solid var(--bd);border-top-color:var(--g);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* SUCCESS */
+.suc{background:var(--gd);border-radius:var(--r);padding:1.75rem 1rem;text-align:center;margin-bottom:11px}
+.suc-e{font-size:44px;display:block;margin-bottom:10px}
+.suc h2{font-size:19px;font-weight:700;color:#fff;margin-bottom:5px}
+.suc p{font-size:13px;color:var(--gm)}
+.sr{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--bd);font-size:13px}
+.sr:last-child{border-bottom:none}
+.sk{color:var(--t2)}.sv{font-weight:600}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:9px 18px;border-radius:20px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;pointer-events:none;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hdr">
+    <div class="hdr-r">
+      <div class="hdr-ic">💧</div>
+      <div><h1>PoolCheck Pro</h1><p id="hsub">Villa Park Fontein</p></div>
+    </div>
+    <div class="steps" id="sbar">
+      <div class="sd a" id="sd1"></div><div class="sd" id="sd2"></div>
+      <div class="sd" id="sd3"></div><div class="sd" id="sd4"></div>
+    </div>
+  </div>
+  <div id="screen"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const API='api.php';
+const up=new URLSearchParams(location.search);
+const USER_TOKEN=up.get('m');
+const WONING_TOKEN=up.get('k');
+
+const S={
+  step:1, user:null, woning:null,
+  stripSrc:null,stripUrl:null,
+  ph:null,cl:null,alk:null,stab:null,aiDone:false,aiLoading:false,
+  advice:null,prevVisit:null,notes:'',
+  loading:false,confirmPhotos:{chem:null,pool:null},
+  visitId:null,mailResult:null
+};
+
+// ============================================================
+function setStep(n){
+  S.step=n;
+  for(let i=1;i<=4;i++){const e=document.getElementById('sd'+i);if(e) e.className='sd'+(i<n?' d':i===n?' a':'');}
+  render(); window.scrollTo(0,0);
+}
+
+function render(){
+  const scr=document.getElementById('screen');
+  if(!S.user){ scr.innerHTML=renderNeedUser(); return; }
+  if(!S.woning){ scr.innerHTML=renderNeedWoning(); return; }
+  switch(S.step){
+    case 1: scr.innerHTML=renderPhoto(); break;
+    case 2: scr.innerHTML=renderForm(); break;
+    case 3: scr.innerHTML=renderAdvice(); break;
+    case 4: scr.innerHTML=renderSuccess(); break;
+  }
+}
+
+// ============================================================
+// AUTH: NO USER
+// ============================================================
+function renderNeedUser(){
+  document.getElementById('hsub').textContent='Welkom';
+  return `<div class="auth">
+    <div class="auth-icon">👷</div>
+    <div class="auth-title">Open jouw persoonlijke link</div>
+    <div class="auth-sub">Je hebt een unieke link nodig om verder te gaan. Die heb je van de beheerder ontvangen.</div>
+    <div class="auth-box">
+      <h3>Jouw link ziet er zo uit:</h3>
+      <code>pool.villaparkfontein.com/?m=jouwcode</code>
+      <p style="font-size:12px;color:var(--t2);margin-top:8px">Sla hem op als bladwijzer of homescreen-icoon.</p>
+    </div>
+    <p style="font-size:12px;color:var(--t3)">Geen link? Neem contact op met de beheerder via <a href="admin.html" style="color:var(--gd)">het beheerderspaneel</a>.</p>
+  </div>`;
+}
+
+// ============================================================
+// AUTH: HAVE USER, NEED WONING
+// ============================================================
+function renderNeedWoning(){
+  document.getElementById('hsub').textContent='Scan pool QR';
+  const ini=S.user.name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  const isKlant=S.user.roles.includes('klant');
+
+  let woningenList='';
+  if(isKlant && S.user.woningen?.length>0){
+    if(S.user.woningen.length===1){
+      // Auto-select for single-woning klant
+      setTimeout(()=>selectWoning(S.user.woningen[0]),100);
+      return `<div class="sec"><div class="ld"><div class="sp"></div>Woning laden...</div></div>`;
+    }
+    woningenList=`<div class="card"><div class="cb"><div class="ct">Jouw woningen</div><div class="wlist">
+      ${S.user.woningen.map(w=>`<div class="witem" onclick="selectWoning(${JSON.stringify(w).replace(/"/g,'&quot;')})">
+        <div class="witem-av">🏊</div>
+        <div><div class="witem-name">${w.name}</div><div class="witem-meta">${w.pool_type||''}</div></div>
+        <span style="color:var(--t3);font-size:18px;margin-left:auto">›</span>
+      </div>`).join('')}
+    </div></div></div>`;
+  }
+
+  return `<div class="sec">
+    <div class="badge-user">
+      <div class="badge-av">${ini}</div>
+      <div><div class="badge-name">${S.user.name}</div><div class="badge-sub">Ingelogd &mdash; kies een woning</div></div>
+    </div>
+    ${woningenList}
+    <div class="card"><div class="cb">
+      <div class="ct">Scan QR code bij het zwembad</div>
+      <p style="font-size:13px;color:var(--t2);margin-bottom:12px">Scan de QR code die op of bij het zwembad hangt.</p>
+      <div style="background:#f0f8f5;border-radius:8px;padding:14px;text-align:center">
+        <div style="font-size:36px;margin-bottom:6px">📷</div>
+        <p style="font-size:13px;color:var(--t2)">Gebruik de camera-app van je telefoon om de QR code te scannen</p>
+      </div>
+    </div></div>
+    <div class="card"><div class="cb">
+      <div class="ct">Of typ de poolcode handmatig</div>
+      <div class="code-input">
+        <input type="text" id="pool-code-input" placeholder="ABC123" maxlength="6" autocomplete="off" style="font-size:18px;letter-spacing:.1em;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+        <button onclick="submitPoolCode()">Zoeken</button>
+      </div>
+      <p style="font-size:11px;color:var(--t3);margin-top:6px">De 6-letterige poolcode staat op de QR sticker of in het admin panel.</p>
+    </div></div>
+  </div>`;
+}
+
+async function submitPoolCode(){
+  const code=document.getElementById('pool-code-input')?.value?.trim();
+  if(!code||code.length<4){ toast('Voer de poolcode in (6 tekens)'); return; }
+  try{
+    const res=await fetch(`${API}?action=woning&code=${encodeURIComponent(code)}`).then(r=>r.json());
+    if(res.woning) selectWoning(res.woning);
+    else toast('Poolcode niet gevonden');
+  }catch(e){ toast('Fout: '+e.message); }
+}
+
+function selectWoning(w){
+  S.woning=w;
+  document.getElementById('hsub').textContent=w.name;
+  loadPrevVisit();
+  render();
+}
+
+async function loadPrevVisit(){
+  try{
+    const r=await fetch(`${API}?action=prev_visit&woning_id=${S.woning.id}`).then(r=>r.json());
+    S.prevVisit=r.visit||null;
+  }catch(e){}
+}
+
+// ============================================================
+// STEP 1: PHOTO
+// ============================================================
+function renderPhoto(){
+  const ini=S.user.name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);
+  return `<div class="sec">
+    <div class="badge-user">
+      <div class="badge-av">${ini}</div>
+      <div><div class="badge-name">${S.user.name}</div><div class="badge-sub">Jouw expertise aan het werk</div></div>
+    </div>
+    <div class="badge-woning">
+      <div class="bw-av">🏊</div>
+      <div><div class="bw-name">${S.woning.name}</div><div class="bw-meta">${S.woning.pool_type} &middot; ${Math.round(S.woning.volume_liters/1000)}m&sup3;</div></div>
+    </div>
+    <div class="card"><div class="cb">
+      <div class="ct">Teststrip foto</div>
+
+      <div class="photo-example">
+        ${stripExampleSVG()}
+        <div class="photo-label">&#8593; Zo maak je de foto: strip naast de kleurenkaart, beide goed verlicht</div>
+      </div>
+
+      <div style="background:#fff8e6;border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:12px;line-height:1.8;color:#7a5c00;border-left:3px solid #f4a261">
+        <strong>Hoe testen:</strong><br>
+        1. Dip de strip kort in het water (&lt;1 seconde)<br>
+        2. Haal eruit en wacht <strong>15 seconden</strong> — niet schudden<br>
+        3. Maak <strong>direct daarna</strong> de foto (na ~1 minuut verkleurt de strip en kloppen de waarden niet meer)<br>
+        4. Leg de strip naast de kleurenkaart op de fles
+      </div>
+      ${S.stripSrc ? `
+        <img src="${S.stripSrc}" class="pimg">
+        ${S.aiLoading?`<div class="ld"><div class="sp"></div>AI leest kleuren uit...</div>`:''}
+        ${S.aiDone?renderAIResult():''}
+        ${!S.aiLoading?`
+          <button class="btn" onclick="goToFormWithAI()">Verder &#8594; waarden bevestigen</button>
+          <button class="btno" onclick="resetPhoto()">Andere foto maken</button>
+        `:''}
+      ` : `
+        <div class="uz">
+          <input type="file" accept="image/*" capture="environment" onchange="handlePhoto(event)">
+          <div style="font-size:32px;margin-bottom:7px">📷</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:3px">Maak foto van teststrip</div>
+          <div style="font-size:12px;color:var(--t2)">Strip + kleurenkaart samen in beeld</div>
+        </div>
+        <button class="btno" style="margin-top:9px" onclick="setStep(2)">Overslaan &mdash; direct invoeren</button>
+      `}
+    </div></div>
+  </div>`;
+}
+
+function stripExampleSVG(){
+  return `<svg viewBox="0 0 320 140" xmlns="http://www.w3.org/2000/svg">
+    <rect width="320" height="140" fill="#1a2a3a" rx="6"/>
+    <!-- Kleurenkaart / aquacheck booklet -->
+    <rect x="20" y="20" width="90" height="100" fill="#f5f0e8" rx="4"/>
+    <text x="65" y="34" text-anchor="middle" fill="#666" font-size="7" font-family="sans-serif">AQUACHECK</text>
+    <rect x="28" y="38" width="18" height="12" rx="2" fill="#ff6b6b"/>
+    <rect x="50" y="38" width="18" height="12" rx="2" fill="#ff9966"/>
+    <rect x="72" y="38" width="18" height="12" rx="2" fill="#ffcc44"/>
+    <rect x="94" y="38" width="14" height="12" rx="2" fill="#88cc44"/>
+    <text x="37" y="46" text-anchor="middle" fill="#fff" font-size="5" font-family="sans-serif">6.0</text>
+    <text x="59" y="46" text-anchor="middle" fill="#fff" font-size="5" font-family="sans-serif">7.0</text>
+    <text x="81" y="46" text-anchor="middle" fill="#fff" font-size="5" font-family="sans-serif">7.5</text>
+    <text x="101" y="46" text-anchor="middle" fill="#fff" font-size="5" font-family="sans-serif">8.0</text>
+    <text x="37" y="57" text-anchor="middle" fill="#333" font-size="5" font-family="sans-serif">pH</text>
+    <rect x="28" y="62" width="18" height="12" rx="2" fill="#ffffaa"/>
+    <rect x="50" y="62" width="18" height="12" rx="2" fill="#aaffaa"/>
+    <rect x="72" y="62" width="18" height="12" rx="2" fill="#44cc44"/>
+    <rect x="94" y="62" width="14" height="12" rx="2" fill="#228844"/>
+    <text x="37" y="81" text-anchor="middle" fill="#333" font-size="5" font-family="sans-serif">Cl</text>
+    <rect x="28" y="86" width="18" height="12" rx="2" fill="#aad4ff"/>
+    <rect x="50" y="86" width="18" height="12" rx="2" fill="#66aaff"/>
+    <rect x="72" y="86" width="18" height="12" rx="2" fill="#3377dd"/>
+    <rect x="94" y="86" width="14" height="12" rx="2" fill="#1144aa"/>
+    <text x="37" y="105" text-anchor="middle" fill="#333" font-size="5" font-family="sans-serif">Alk</text>
+    <rect x="28" y="110" width="18" height="8" rx="2" fill="#ddd"/>
+    <rect x="50" y="110" width="18" height="8" rx="2" fill="#eecc88"/>
+    <rect x="72" y="110" width="18" height="8" rx="2" fill="#cc8844"/>
+    <rect x="94" y="110" width="14" height="8" rx="2" fill="#884422"/>
+    <text x="37" y="124" text-anchor="middle" fill="#aaa" font-size="5" font-family="sans-serif">Stab</text>
+    <!-- Teststrip -->
+    <rect x="145" y="15" width="22" height="110" fill="#f5f5f0" rx="3"/>
+    <!-- pH pad -->
+    <rect x="147" y="22" width="18" height="16" rx="2" fill="#ffcc44"/>
+    <!-- Cl pad -->
+    <rect x="147" y="44" width="18" height="16" rx="2" fill="#66cc44"/>
+    <!-- Alk pad -->
+    <rect x="147" y="66" width="18" height="16" rx="2" fill="#5599dd"/>
+    <!-- Stab pad + WHITE extension -->
+    <rect x="147" y="88" width="18" height="16" rx="2" fill="#ddaa55"/>
+    <rect x="147" y="105" width="18" height="18" rx="1" fill="#fff"/>
+    <!-- Labels -->
+    <text x="156" y="30" text-anchor="middle" fill="#666" font-size="6" font-family="sans-serif">pH</text>
+    <text x="156" y="52" text-anchor="middle" fill="#fff" font-size="6" font-family="sans-serif">Cl</text>
+    <text x="156" y="74" text-anchor="middle" fill="#fff" font-size="6" font-family="sans-serif">Alk</text>
+    <text x="156" y="96" text-anchor="middle" fill="#fff" font-size="6" font-family="sans-serif">Stab</text>
+    <!-- WHITE arrow label -->
+    <text x="174" y="118" fill="#5DCAA5" font-size="8" font-family="sans-serif">&#8592; witte strook</text>
+    <!-- ARROWS -->
+    <line x1="115" y1="70" x2="140" y2="70" stroke="#5DCAA5" stroke-width="1.5" marker-end="url(#arr)"/>
+    <defs><marker id="arr" markerWidth="6" markerHeight="6" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#5DCAA5"/></marker></defs>
+    <!-- Labels top -->
+    <text x="37" y="14" text-anchor="middle" fill="#9FE1CB" font-size="8" font-weight="bold" font-family="sans-serif">Kleurenkaart</text>
+    <text x="156" y="14" text-anchor="middle" fill="#9FE1CB" font-size="8" font-weight="bold" font-family="sans-serif">Strip</text>
+    <!-- Camera icon -->
+    <text x="255" y="75" text-anchor="middle" fill="rgba(255,255,255,.15)" font-size="60" font-family="sans-serif">📷</text>
+  </svg>`;
+}
+
+// Color functions for strip visualization
+function phColor(v){
+  if(v<=6.2) return '#FF4500';
+  if(v<=7.0) return '#FF8C00';
+  if(v<=7.4) return '#E8952A';
+  if(v<=7.6) return '#D4A94A';
+  if(v<=8.0) return '#C4B060';
+  return '#A09060';
+}
+function clColor(v){
+  if(v<0.2) return '#F8F0F0';
+  if(v<0.5) return '#FFD8D8';
+  if(v<1.0) return '#FFB8C0';
+  if(v<2.0) return '#FF8090';
+  if(v<4.0) return '#E05878';
+  if(v<6.0) return '#C03090';
+  return '#800080';
+}
+function alkColor(v){
+  if(v<20)  return '#F5F5D0';
+  if(v<60)  return '#C8DDA0';
+  if(v<100) return '#88BB60';
+  if(v<140) return '#508830';
+  if(v<180) return '#2D6820';
+  return '#1A4810';
+}
+function stabColor(v){
+  if(v<10)  return '#F8F0F8';
+  if(v<30)  return '#F0DCF0';
+  if(v<60)  return '#E0B8E0';
+  if(v<100) return '#C080C8';
+  if(v<150) return '#9840A8';
+  return '#6010A0';
+}
+function clampVal(v,min,max){return Math.min(max,Math.max(min,+v||0));}
+
+function renderAIResult(){
+  const r=S.aiReasoning||{};
+  const params=[
+    {key:'ph', label:'pH',        val:S.ph,   lo:7.2,hi:7.6, min:6.0,max:9.0, step:0.1, unit:'',     colorFn:phColor,  reasons:r.ph},
+    {key:'cl', label:'Chloor',    val:S.cl,   lo:0.5,hi:3.0, min:0,  max:10,  step:0.1, unit:' ppm', colorFn:clColor,  reasons:r.cl},
+    {key:'alk',label:'Alkaliniteit',val:S.alk, lo:80, hi:120, min:0,  max:300, step:5,   unit:' ppm', colorFn:alkColor, reasons:r.alk},
+    {key:'stab',label:'Stabilizer', val:S.stab,lo:30, hi:80,  min:0,  max:300, step:5,   unit:' ppm', colorFn:stabColor,reasons:r.stab},
+  ];
+  function statusCls(v,lo,hi){return v===null?'so':v<lo?'sbad':v>hi?'sw':'so';}
+  function statusLb(s){return s==='so'?'OK':s==='sw'?'Te hoog':'Te laag';}
+
+  return `<div class="ai-z">
+    <div class="ai-h"><span class="ai-b">AI analyse</span><span style="font-size:11px;color:var(--t2)">Schuif om te corrigeren</span></div>
+    ${params.map(p=>{
+      if(p.val===null) return '';
+      const s=statusCls(p.val,p.lo,p.hi);
+      const pct=Math.round(((p.val-p.min)/(p.max-p.min))*100);
+      const swatchColor=p.colorFn(p.val);
+      const normColor1=p.colorFn(p.lo); const normColor2=p.colorFn(p.hi);
+      return `<div style="margin-bottom:14px;padding-bottom:14px;border-bottom:0.5px solid var(--bd)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <div style="width:32px;height:32px;border-radius:6px;background:${swatchColor};border:1px solid rgba(0,0,0,.15);flex-shrink:0" title="AI-herkende kleur"></div>
+          <div style="flex:1">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:13px;font-weight:600">${p.label}</span>
+              <span class="sb ${s}">${statusLb(s)}</span>
+            </div>
+            ${p.reasons?`<div style="font-size:10px;color:var(--t3);line-height:1.4">${p.reasons}</div>`:''}
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:20px;height:16px;border-radius:3px;background:${normColor1};border:1px solid rgba(0,0,0,.1);flex-shrink:0" title="Norm laag"></div>
+          <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.val}"
+            style="flex:1;accent-color:var(--g)"
+            oninput="updateAIVal('${p.key}',this.value)"
+            onchange="updateAIVal('${p.key}',this.value)">
+          <div style="width:20px;height:16px;border-radius:3px;background:${normColor2};border:1px solid rgba(0,0,0,.1);flex-shrink:0" title="Norm hoog"></div>
+          <span style="font-size:15px;font-weight:700;min-width:52px;text-align:right" id="aiv-${p.key}">${p.val}${p.unit}</span>
+        </div>
+      </div>`;
+    }).join('')}
+    <p style="font-size:11px;color:var(--t3)">Kleurvlakje = wat AI ziet op de strip. Schuif als waarde niet klopt.</p>
+  </div>`;
+}
+
+function updateAIVal(key, raw){
+  const params={ph:{min:6,max:9,step:0.1,unit:''},cl:{min:0,max:10,step:0.1,unit:' ppm'},alk:{min:0,max:300,step:1,unit:' ppm'},stab:{min:0,max:300,step:1,unit:' ppm'}};
+  const p=params[key]; if(!p) return;
+  const v=key==='ph'||key==='cl'?parseFloat((+raw).toFixed(1)):parseInt(raw);
+  S[key]=v;
+  const el=document.getElementById('aiv-'+key);
+  if(el) el.textContent=v+p.unit;
+  // Update swatch color
+  const colorFns={ph:phColor,cl:clColor,alk:alkColor,stab:stabColor};
+  const swatch=document.querySelector(`[oninput*="${key}"]`)?.parentElement?.previousElementSibling?.querySelector('div');
+  if(swatch&&colorFns[key]) swatch.style.background=colorFns[key](v);
+  // Update status badge
+  const ranges={ph:[7.2,7.6],cl:[0.5,3.0],alk:[80,120],stab:[30,80]};
+  const [lo,hi]=ranges[key]||[0,999];
+  const s=v<lo?'sbad':v>hi?'sw':'so';
+  const lb=s==='so'?'OK':s==='sw'?'Te hoog':'Te laag';
+  const badge=document.querySelector(`[oninput*="${key}"]`)?.parentElement?.previousElementSibling?.querySelector('.sb');
+  if(badge){badge.className='sb '+s;badge.textContent=lb;}
+}
+
+function goToFormWithAI(){
+  // Pre-fill form with AI values, then go to step 2
+  setStep(2);
+}
+
+async function handlePhoto(e){
+  const file=e.target.files[0]; if(!file) return;
+  const reader=new FileReader();
+  reader.onload=ev=>{S.stripSrc=ev.target.result;S.aiLoading=true;render();analyzeStrip(ev.target.result.split(',')[1],file.type||'image/jpeg');};
+  reader.readAsDataURL(file);
+  const fd=new FormData();fd.append('photo',file);
+  fetch(`${API}?action=upload_photo`,{method:'POST',body:fd}).then(r=>r.json()).then(d=>{if(d.url)S.stripUrl=d.url;}).catch(()=>{});
+}
+
+async function analyzeStrip(b64,mt){
+  try{
+    const resp=await fetch(`${API}?action=ai_strip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:b64,type:mt})});
+    const data=await resp.json();
+    if(data.ph!==undefined){
+      S.ph=+data.ph; S.cl=+data.cl; S.alk=+data.alk; S.stab=data.stab||null;
+      S.aiReasoning=data.reasoning||null;
+      S.aiOriginal={ph:+data.ph,cl:+data.cl,alk:+data.alk,stab:data.stab||null};
+      S.aiDone=true;
+    } else {
+      toast((data.error||'AI kon strip niet lezen')+'  — vul handmatig in', 5000);
+    }
+  }catch(e){toast('AI analyse overgeslagen');}
+  S.aiLoading=false;render();
+}
+
+function resetPhoto(){S.stripSrc=null;S.stripUrl=null;S.ph=null;S.cl=null;S.alk=null;S.stab=null;S.aiDone=false;render();}
+
+// ============================================================
+// STEP 2: FORM (volume NIET bewerkbaar door monteur)
+// ============================================================
+function renderForm(){
+  const vol=S.woning.volume_liters; // fixed, from woning record
+  const firstName=S.user.name.split(' ')[0];
+  return `<div class="sec">
+    <button class="bk" onclick="setStep(1)">&#8249; Terug</button>
+    <div class="expert">
+      <div class="ex-name">Jouw meting, ${firstName}</div>
+      <div class="ex-sub">Vul de waarden in die jij hebt gemeten</div>
+    </div>
+    <div class="card"><div class="cb">
+      <div class="ct">Gemeten waarden</div>
+      <div class="fr">
+        <div class="fg"><label>pH</label><input type="number" id="f-ph" step="0.1" min="6" max="9" value="${S.ph||''}" placeholder="7.4"><span class="nh">Norm: 7.2–7.6</span></div>
+        <div class="fg"><label>Chloor (ppm)</label><input type="number" id="f-cl" step="0.1" min="0" max="10" value="${S.cl||''}" placeholder="1.5"><span class="nh">Norm: 1–3 ppm</span></div>
+        <div class="fg"><label>Alkaliniteit (ppm)</label><input type="number" id="f-alk" step="1" min="0" max="300" value="${S.alk||''}" placeholder="100"><span class="nh">Norm: 80–120 ppm</span></div>
+        <div class="fg"><label>Stabilizer (ppm)</label><input type="number" id="f-stab" step="1" min="0" max="200" value="${S.stab||''}" placeholder="40"><span class="nh">Norm: 30–50 ppm</span></div>
+        <div class="fg"><label>Volume (liter)</label><input type="text" value="${vol.toLocaleString('nl-NL')}" readonly title="Volume wordt beheerd door de beheerder"></div>
+        <div class="fg"><label>Monteur</label><input type="text" value="${S.user.name}" readonly></div>
+        <div class="fg full"><label>Opmerkingen</label><textarea id="f-notes" placeholder="Jouw observaties: troebel, groenaanslag, filter, bezoekers...">${S.notes||''}</textarea></div>
+      </div>
+      <button class="btn" onclick="submitForm()">Bekijk mijn analyse &#8594;</button>
+    </div></div>
+  </div>`;
+}
+
+function submitForm(){
+  const ph=parseFloat(document.getElementById('f-ph')?.value);
+  const cl=parseFloat(document.getElementById('f-cl')?.value);
+  const alk=parseInt(document.getElementById('f-alk')?.value);
+  const stab=parseFloat(document.getElementById('f-stab')?.value)||null;
+  const notes=document.getElementById('f-notes')?.value||'';
+  if([ph,cl,alk].some(v=>isNaN(v))){ toast('Vul pH, chloor en alkaliniteit in'); return; }
+  Object.assign(S,{ph,cl,alk,stab,notes});
+  S.advice=calcAdvice(ph,cl,alk,stab,S.woning.volume_liters,S.prevVisit);
+  setStep(3);
+}
+
+function calcAdvice(ph,cl,alk,stab,vol,prev){
+  const items=[]; const m=vol/1000;
+  function prevLine(field,cur,unit=''){
+    if(!prev||prev[field]===null||prev[field]===undefined) return null;
+    const old=parseFloat(prev[field]);
+    const d=(cur-old).toFixed(1);
+    const arrow=d>0?'▲':d<0?'▼':'—';
+    const daysAgo=prev.visit_date?Math.round((Date.now()-new Date(prev.visit_date))/86400000):null;
+    return `Vorig: ${old}${unit} ${arrow} ${cur}${unit}${daysAgo!==null?` (${daysAgo}d geleden)`:''}`;
+  }
+  function anom(field,cur,prev_v,thresh,label){
+    if(!prev_v) return null;
+    return Math.abs(cur-parseFloat(prev_v))>thresh?`⚠️ Grote afwijking in ${label} — onderzoek oorzaak voor je compenseert (lek? regen? gebruik?)`:null;
+  }
+
+  // pH
+  const pL=prevLine('ph',ph);
+  const pA=anom('ph',ph,prev?.ph,0.8,'pH');
+  if(ph<7.2){
+    const diff=parseFloat((7.4-ph).toFixed(2)); const td=Math.min(diff,0.4);
+    const g=Math.round(td*m*180); const rem=parseFloat((diff-td).toFixed(2));
+    items.push({level:'bad',param:'pH',value:ph,unit:'',title:'pH te laag',prevLine:pL,finding:`pH ${ph} is onder de norm (7.2–7.6).`,dose:`${g}g natriumcarbonaat (pH-plus)${diff>0.2?' — voeg in 2 delen toe, wacht 4u tussendoor':''}`,next:rem>0?`Volgende week nog ~${Math.round(rem*m*180)}g (${rem} eenheden resterend)`:null,limit:'Max 0.4 pH-eenheden per dag. Pomp laten draaien.',anomaly:pA});
+  }else if(ph>7.6){
+    const diff=parseFloat((ph-7.4).toFixed(2)); const td=Math.min(diff,0.4);
+    const ml=Math.round(td*m*190); const rem=parseFloat((diff-td).toFixed(2));
+    items.push({level:ph>7.9?'bad':'warn',param:'pH',value:ph,unit:'',title:'pH te hoog',prevLine:pL,finding:`pH ${ph} boven norm (7.2–7.6). Chloor werkt minder effectief.`,dose:`${ml}ml muriatic acid 31,45%${diff>0.2?' — voeg in 2 delen toe, wacht 4u tussendoor':''}`,next:rem>0?`Volgende week nog ~${Math.round(rem*m*190)}ml (${rem} eenheden resterend)`:null,limit:'Max 0.4 pH-eenheden per dag corrigeren. Pomp aan.',anomaly:pA});
+  }else{items.push({level:'ok',param:'pH',value:ph,unit:'',title:'pH perfect',prevLine:pL,finding:`pH ${ph} — precies goed.`,dose:null,next:null,limit:null,anomaly:null});}
+
+  // Chloor
+  const cL=prevLine('chlorine',cl,' ppm');
+  const cA=anom('cl',cl,prev?.chlorine,2,'chloor');
+  if(cl<0.5){
+    const g=Math.round(Math.min(2,1.5-cl)*m*2.5);
+    items.push({level:'bad',param:'Chloor',value:cl,unit:' ppm',title:'Chloor te laag — gebruik verboden',prevLine:cL,finding:`${cl} ppm is onveilig. Badwater mag niet worden gebruikt.`,dose:`${g}g natriumhypochloriet 10%`,next:'Na 2u hermeten en zonodig herhalen.',limit:null,anomaly:cA});
+  }else if(cl>3){
+    const over=cl>5?`${Math.round((cl-3)*m*0.7)}g natriumbisulfiet`:'Wacht 24–48u — laat vanzelf dalen';
+    items.push({level:'warn',param:'Chloor',value:cl,unit:' ppm',title:'Chloor te hoog',prevLine:cL,finding:`${cl} ppm — te hoog voor gebruik.`,dose:over,next:null,limit:'Niet verder toevoegen.',anomaly:cA});
+  }else{items.push({level:'ok',param:'Chloor',value:cl,unit:' ppm',title:'Chloor goed',prevLine:cL,finding:`${cl} ppm — prima.`,dose:null,next:null,limit:null,anomaly:null});}
+
+  // Alkaliniteit
+  const aL=prevLine('alkalinity',alk,' ppm');
+  const aA=anom('alk',alk,prev?.alkalinity,30,'alkaliniteit');
+  if(alk<80){
+    const diff=100-alk; const td=Math.min(diff,25); const g=Math.round(td*m*1.4); const rem=diff-td;
+    items.push({level:'bad',param:'Alkaliniteit',value:alk,unit:' ppm',title:'Alkaliniteit te laag',prevLine:aL,finding:`${alk} ppm — pH wordt instabiel. Norm: 80–120 ppm.`,dose:`${g}g natriumbicarbonaat`,next:rem>0?`Volgende week nog ~${Math.round(rem*m*1.4)}g (${rem} ppm resterend)`:null,limit:'Max 25 ppm per sessie. Geleidelijk toevoegen.',anomaly:aA});
+  }else if(alk>120){
+    const diff=alk-100; const td=Math.min(diff,25); const ml=Math.round(td*m*0.8); const rem=diff-td;
+    items.push({level:'warn',param:'Alkaliniteit',value:alk,unit:' ppm',title:'Alkaliniteit te hoog',prevLine:aL,finding:`${alk} ppm — pH-correcties minder effectief.`,dose:`${ml}ml muriatic acid 31,45%`,next:rem>0?`Volgende week nog ~${Math.round(rem*m*0.8)}ml (${rem} ppm resterend)`:null,limit:'Max 25 ppm per sessie verlagen.',anomaly:aA});
+  }else{items.push({level:'ok',param:'Alkaliniteit',value:alk,unit:' ppm',title:'Alkaliniteit stabiel',prevLine:aL,finding:`${alk} ppm — stabiel.`,dose:null,next:null,limit:null,anomaly:null});}
+
+  // Stabilizer
+  if(stab!==null){
+    const sL=prevLine('stabilizer',stab,' ppm');
+    if(stab<30) items.push({level:'warn',param:'Stabilizer',value:stab,unit:' ppm',title:'Stabilizer laag',prevLine:sL,finding:`${stab} ppm — chloor verdampt snel in zon. Norm: 30–50 ppm.`,dose:`${Math.round((50-stab)*m)}g cyanurinezuur`,next:null,limit:'Oplossen in warm water voor toevoegen.',anomaly:null});
+    else if(stab>80) items.push({level:'warn',param:'Stabilizer',value:stab,unit:' ppm',title:'Stabilizer te hoog',prevLine:sL,finding:`${stab} ppm — chloor werkt minder. Deels water verversen.`,dose:null,next:null,limit:'10–20% water vervangen.',anomaly:null});
+    else items.push({level:'ok',param:'Stabilizer',value:stab,unit:' ppm',title:'Stabilizer OK',prevLine:sL,finding:`${stab} ppm — goed.`,dose:null,next:null,limit:null,anomaly:null});
+  }
+  return{items,prev:prev?{date:prev.visit_date,ph:prev.ph,chlorine:prev.chlorine,alkalinity:prev.alkalinity}:null};
+}
+
+// ============================================================
+// STEP 3: ADVICE
+// ============================================================
+function renderAdvice(){
+  const a=S.advice; const fname=S.user.name.split(' ')[0];
+  const issues=a.items.filter(i=>i.level!=='ok');
+  const hdr=issues.length===0
+    ?`<div class="expert"><div class="ex-name">${fname}, dit zwembad is perfect! 🎉</div><div class="ex-sub">Alle waarden in de norm. Goed werk.</div></div>`
+    :`<div class="expert"><div class="ex-name">${fname}, jouw analyse</div><div class="ex-sub">${issues.length} punt${issues.length>1?'en':''} vereist${issues.length>1?'en':''} aandacht</div></div>`;
+
+  const itemsHtml=a.items.map(i=>{
+    const cls=i.level==='ok'?'fb-ok':i.level==='warn'?'fb-warn':'fb-bad';
+    return `<div class="fb ${cls}">
+      <div class="fb-top"><span class="fb-param">${i.param}</span><span class="fb-val">${i.value}${i.unit}</span></div>
+      ${i.prevLine?`<div class="fb-prev">${i.prevLine}</div>`:''}
+      <div class="fb-text">${i.finding}</div>
+      ${i.dose?`<div class="fb-dose">&#10140; ${i.dose}</div>`:''}
+      ${i.next?`<div class="fb-next">&#128197; ${i.next}</div>`:''}
+      ${i.limit?`<div class="fb-limit">&#9432; ${i.limit}</div>`:''}
+      ${i.anomaly?`<div class="fb-anom">${i.anomaly}</div>`:''}
+    </div>`;
+  }).join('');
+
+  return `<div class="sec">
+    <button class="bk" onclick="setStep(2)">&#8249; Terug</button>
+    ${hdr}${itemsHtml}
+    <div class="card"><div class="cb">
+      <div class="ct">Bevestigingsfoto's</div>
+      <div class="pg">
+        <div class="ps ${S.confirmPhotos.chem?'done':''}">
+          <input type="file" accept="image/*" capture="environment" onchange="confirmPhoto('chem',event)">
+          <span class="pe">${S.confirmPhotos.chem?'✅':'🧴'}</span>
+          <span class="pp">${S.confirmPhotos.chem?'Geüpload':'Chemicaliën\ngebruikt'}</span>
+        </div>
+        <div class="ps ${S.confirmPhotos.pool?'done':''}">
+          <input type="file" accept="image/*" capture="environment" onchange="confirmPhoto('pool',event)">
+          <span class="pe">${S.confirmPhotos.pool?'✅':'🏊'}</span>
+          <span class="pp">${S.confirmPhotos.pool?'Geüpload':'Zwembad\nna behandeling'}</span>
+        </div>
+      </div>
+      ${S.loading?`<div class="ld" style="margin-top:11px"><div class="sp"></div>Opslaan & versturen...</div>`:`
+        <button class="btn" onclick="finalizeVisit()" style="margin-top:12px">Rapport opslaan &#128233;</button>`}
+    </div></div>
+  </div>`;
+}
+
+async function confirmPhoto(type,e){
+  const file=e.target.files[0]; if(!file) return;
+  toast('Uploaden...'); const fd=new FormData(); fd.append('photo',file);
+  try{const r=await fetch(`${API}?action=upload_photo`,{method:'POST',body:fd}).then(r=>r.json());S.confirmPhotos[type]=r.url||'uploaded';toast('Foto ✓');render();}
+  catch(e){S.confirmPhotos[type]='uploaded';render();}
+}
+
+async function finalizeVisit(){
+  S.loading=true;render();
+  const p={woning_id:S.woning.id,user_id:S.user?.id||null,ph:S.ph,chlorine:S.cl,alkalinity:S.alk,stabilizer:S.stab,volume_used:S.woning.volume_liters,notes:S.notes,strip_photo:S.stripUrl||'',confirm_photo_chemicals:S.confirmPhotos.chem||'',confirm_photo_pool:S.confirmPhotos.pool||''};
+  try{
+    const res=await fetch(`${API}?action=save_visit`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});
+    const data=await res.json();
+    if(data.error) throw new Error(data.error);
+    S.visitId=data.visit_id;S.mailResult=data.mail_results;S.loading=false;
+    // Save AI correction data for future training (fire-and-forget)
+    if(S.stripUrl&&S.aiDone){
+      fetch(API+'?action=save_correction',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          visit_id:data.visit_id, photo_url:S.stripUrl,
+          ai_ph:S.aiOriginal?.ph, ai_cl:S.aiOriginal?.cl, ai_alk:S.aiOriginal?.alk, ai_stab:S.aiOriginal?.stab,
+          human_ph:S.ph, human_cl:S.cl, human_alk:S.alk, human_stab:S.stab,
+          reasoning:S.aiReasoning
+        })
+      }).catch(()=>{});
+    }
+    setStep(4);
+  }catch(e){S.loading=false;toast('Fout: '+e.message,5000);render();}
+}
+
+// ============================================================
+// STEP 4: SUCCESS
+// ============================================================
+function renderSuccess(){
+  const a=S.advice;
+  const date=new Date().toLocaleDateString('nl-NL',{day:'numeric',month:'long',year:'numeric'});
+  const actions=a.items.filter(i=>i.dose).map(i=>`${i.param}: ${i.dose}`).join('\n')||'Alles OK';
+  const mr=S.mailResult||{}; const fname=S.user.name.split(' ')[0];
+  return `<div class="sec">
+    <div class="suc">
+      <span class="suc-e">&#127946;</span>
+      <h2>Top werk, ${fname}!</h2>
+      <p>Rapport #${S.visitId} verstuurd</p>
+    </div>
+    <div class="card"><div class="cb">
+      <div class="ct">Samenvatting</div>
+      <div class="sr"><span class="sk">Woning</span><span class="sv">${S.woning.name}</span></div>
+      <div class="sr"><span class="sk">pH / Cl / Alk</span><span class="sv">${S.ph?.toFixed(1)} / ${S.cl?.toFixed(1)} / ${S.alk}</span></div>
+      <div class="sr"><span class="sk">E-mails</span><span class="sv">${[mr.client&&'Klant',mr.tech&&'Monteur',mr.manager&&'Manager'].filter(Boolean).join(', ')||'—'}</span></div>
+    </div></div>
+    <div class="card"><div class="cb">
+      <div class="ct">WhatsApp</div>
+      <textarea id="wamsg" readonly style="width:100%;font-size:12px;padding:9px;border:1px solid var(--bd);border-radius:7px;resize:none;background:var(--bg);color:var(--t);line-height:1.5" rows="6">✅ ${S.woning.name} — ${date}
+pH ${S.ph?.toFixed(1)} | Cl ${S.cl?.toFixed(1)} | Alk ${S.alk}${S.stab?` | Stab ${S.stab}`:''}
+
+${actions}</textarea>
+      <button class="btno" onclick="navigator.clipboard?.writeText(document.getElementById('wamsg').value).then(()=>toast('Gekopieerd ✓'))">Kopieer</button>
+    </div></div>
+    <button class="btn" style="margin:0 13px;width:calc(100% - 26px)" onclick="newVisit()">Volgende woning</button>
+  </div>`;
+}
+
+function newVisit(){
+  const u=S.user;
+  Object.assign(S,{step:1,woning:null,stripSrc:null,stripUrl:null,ph:null,cl:null,alk:null,stab:null,aiDone:false,aiLoading:false,advice:null,prevVisit:null,notes:'',loading:false,confirmPhotos:{chem:null,pool:null},visitId:null,mailResult:null});
+  S.user=u; document.getElementById('hsub').textContent='Villa Park Fontein'; render();
+}
+
+function toast(msg,dur=2500){const e=document.getElementById('toast');e.textContent=msg;e.classList.add('show');setTimeout(()=>e.classList.remove('show'),dur);}
+
+// ============================================================
+// INIT
+// ============================================================
+async function init(){
+  // Try to load user from URL token
+  if(USER_TOKEN){
+    try{
+      const res=await fetch(`${API}?action=user&token=${USER_TOKEN}`).then(r=>r.json());
+      if(res.user) S.user=res.user;
+    }catch(e){}
+  }
+  // Try to load woning from URL token (QR scan)
+  if(WONING_TOKEN&&S.user){
+    try{
+      const res=await fetch(`${API}?action=woning&token=${WONING_TOKEN}`).then(r=>r.json());
+      if(res.woning){S.woning=res.woning;loadPrevVisit();}
+    }catch(e){}
+  }
+  render();
+}
+init();
+</script>
+</body>
+</html>
