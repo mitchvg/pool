@@ -8,409 +8,714 @@
 :root{--g:#1D9E75;--gd:#0F6E56;--gl:#E1F5EE;--bg:#f4f4f2;--s:#fff;--bd:rgba(0,0,0,.1);--t:#111;--t2:#555;--t3:#aaa;--r:12px;--rs:8px;--red:#e24b4a}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--t);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+/* Login */
 .lw{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:1rem}
 .lc{background:var(--s);border-radius:var(--r);padding:2rem;width:100%;max-width:360px;border:1px solid var(--bd)}
 .lc h1{font-size:22px;font-weight:700;color:var(--gd);margin-bottom:4px}
 .lc p{font-size:13px;color:var(--t2);margin-bottom:1.5rem}
-.lc input{width:100%;padding:11px 13px;border:1.5px solid var(--bd);border-radius:var(--rs);font-size:15px;margin-bottom:10px;outline:none}
+.lc input{width:100%;padding:11px 13px;border:1.5px solid var(--bd);border-radius:var(--rs);font-size:14px;margin-bottom:10px;outline:none}
 .lc input:focus{border-color:var(--g)}
+/* Layout */
 .layout{display:flex;min-height:100vh}
-.side{width:205px;background:var(--gd);padding:1.25rem 1rem;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.side{width:210px;background:var(--gd);padding:1.25rem 1rem;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
 .side-logo{display:flex;align-items:center;gap:9px;margin-bottom:1.5rem}
-.side-logo span{font-size:20px}
 .side-logo h1{font-size:15px;font-weight:700;color:#fff}
-.nav{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:var(--rs);cursor:pointer;color:rgba(255,255,255,.7);font-size:13px;background:none;border:none;width:100%;text-align:left}
+.nav{display:flex;align-items:center;gap:9px;padding:9px 11px;border-radius:var(--rs);cursor:pointer;color:rgba(255,255,255,.75);font-size:13px;background:none;border:none;width:100%;text-align:left;transition:background .15s}
 .nav:hover,.nav.on{background:rgba(255,255,255,.15);color:#fff}
-.nav em{font-size:15px;width:18px;text-align:center;font-style:normal}
+.nav em{font-size:15px;width:20px;text-align:center;font-style:normal}
 .spacer{flex:1}
-.main{flex:1;padding:1.75rem;overflow-y:auto;max-width:1000px}
+.nav-user{font-size:11px;color:rgba(255,255,255,.5);padding:8px 11px 4px}
+/* Main */
+.main{flex:1;padding:1.75rem;overflow-y:auto}
 .pg{display:none}.pg.v{display:block}
-h2{font-size:19px;font-weight:700;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:10px}
-.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:1.5rem}
+h2{font-size:19px;font-weight:700;margin-bottom:1.25rem;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+/* Stats */
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:1.5rem}
 .stat{background:var(--s);border-radius:var(--r);border:1px solid var(--bd);padding:.9rem 1rem}
 .stat-v{font-size:26px;font-weight:700;color:var(--gd)}
 .stat-l{font-size:12px;color:var(--t2);margin-top:2px}
+/* Cards & tables */
 .card{background:var(--s);border-radius:var(--r);border:1px solid var(--bd);overflow:hidden;margin-bottom:1rem}
+.card-head{padding:.9rem 1rem;border-bottom:1px solid var(--bd);font-weight:600;font-size:14px;display:flex;align-items:center;justify-content:space-between}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{padding:9px 12px;text-align:left;font-weight:600;color:var(--t2);border-bottom:1.5px solid var(--bd);white-space:nowrap}
 td{padding:9px 12px;border-bottom:1px solid var(--bd);vertical-align:middle}
 tr:last-child td{border-bottom:none}
 tr:hover td{background:#fafaf8}
-.empty{text-align:center;color:var(--t3);padding:2rem;font-size:13px}
-.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px}
-.ok{background:#eaf3de;color:#2d6a4f}.warn{background:#faeeda;color:#7a4f00}.bad{background:#fcebeb;color:#8b1c1c}
-.role{background:#e8f4fd;color:#1565c0}.grey{background:#f0f0f0;color:#888}
-.btn{padding:8px 16px;background:var(--g);color:#fff;border:none;border-radius:var(--rs);font-size:13px;font-weight:600;cursor:pointer}
+.empty{text-align:center;color:var(--t3);padding:2.5rem;font-size:13px}
+/* Badges */
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:2px 9px;border-radius:20px}
+.b-ok{background:#eaf3de;color:#2d6a4f}
+.b-warn{background:#faeeda;color:#7a4f00}
+.b-bad{background:#fcebeb;color:#8b1c1c}
+.b-blue{background:#e8f4fd;color:#1565c0}
+.b-grey{background:#f0f0f0;color:#666}
+.b-admin{background:#f3e8ff;color:#6b21a8}
+/* Buttons */
+.btn{padding:8px 16px;background:var(--g);color:#fff;border:none;border-radius:var(--rs);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
 .btn:hover{opacity:.9}
-.bsm{padding:4px 10px;font-size:12px;background:var(--gl);color:var(--gd);border:none;border-radius:6px;cursor:pointer}
-.bsm:hover{background:#c5e8d8}
-.bout{background:transparent;border:1px solid var(--bd);color:var(--t2)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-out{background:transparent;border:1.5px solid var(--bd);color:var(--t2)}
+.btn-red{background:var(--red)}
+.btn-ghost{background:var(--gl);color:var(--gd);border:none}
+/* Forms */
 .fg{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
-.fg.h{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.fg label,.fg > label{font-size:12px;font-weight:600;color:var(--t2)}
+.fg.half{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{font-size:12px;font-weight:600;color:var(--t2)}
 .fg input,.fg select,.fg textarea{padding:9px 11px;border:1.5px solid var(--bd);border-radius:var(--rs);font-size:14px;background:#fff;color:var(--t);outline:none;width:100%}
 .fg input:focus,.fg select:focus,.fg textarea:focus{border-color:var(--g)}
-.fg .hint{font-size:11px;color:var(--t3)}
-.fg textarea{resize:vertical;min-height:56px;font-size:13px}
-.rcb{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px}
-.rcb input{width:auto;margin:0}
-.overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:center;justify-content:center;padding:1rem}
-.modal{background:#fff;border-radius:var(--r);padding:1.5rem;width:100%;max-width:520px;max-height:92vh;overflow-y:auto}
-.modal h3{font-size:16px;font-weight:700;margin-bottom:1rem}
-.mbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:1rem;padding-top:1rem;border-top:1px solid var(--bd)}
-.lb{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:7px 10px;font-size:12px;word-break:break-all;color:var(--t2);font-family:monospace}
-.lrow{display:flex;align-items:center;gap:6px;margin-top:4px}
-.lrow .lb{flex:1}
-.ld{display:flex;align-items:center;gap:8px;padding:1.5rem;font-size:13px;color:var(--t2)}
-.sp{width:16px;height:16px;border:2px solid var(--bd);border-top-color:var(--g);border-radius:50%;animation:s .7s linear infinite}
-@keyframes s{to{transform:rotate(360deg)}}
-.toast{position:fixed;bottom:20px;right:20px;background:#111;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;z-index:200;opacity:0;transition:opacity .25s;pointer-events:none}
+.fg textarea{resize:vertical;min-height:60px;font-size:13px}
+.hint{font-size:11px;color:var(--t3)}
+.check-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:13px;cursor:pointer}
+.check-row input{width:auto}
+/* Modal */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:flex;align-items:flex-start;justify-content:center;padding:2rem 1rem;overflow-y:auto}
+.modal{background:#fff;border-radius:var(--r);padding:1.5rem;width:100%;max-width:520px;margin:auto}
+.modal h3{font-size:16px;font-weight:700;margin-bottom:1.25rem}
+.mbtns{display:flex;gap:8px;justify-content:flex-end;margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--bd)}
+/* Link box */
+.link-box{background:#f8f8f6;border:1px solid var(--bd);border-radius:6px;padding:7px 10px;font-size:12px;font-family:monospace;word-break:break-all;color:var(--t2)}
+.link-row{display:flex;gap:6px;align-items:center;margin-top:4px}
+.link-row .link-box{flex:1}
+/* Loader */
+.ld{display:flex;align-items:center;gap:10px;padding:1.5rem;font-size:13px;color:var(--t2)}
+.sp{width:16px;height:16px;border:2px solid var(--bd);border-top-color:var(--g);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* Toast */
+.toast{position:fixed;bottom:20px;right:20px;background:#111;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;z-index:300;opacity:0;transition:opacity .2s;pointer-events:none;max-width:320px}
 .toast.on{opacity:1}
+/* Settings form */
+.settings-section{background:var(--s);border-radius:var(--r);border:1px solid var(--bd);padding:1.25rem;margin-bottom:1rem}
+.settings-section h3{font-size:14px;font-weight:600;margin-bottom:1rem;padding-bottom:8px;border-bottom:1px solid var(--bd);color:var(--t2)}
+.status-bar{background:var(--s);border:1px solid var(--bd);border-radius:var(--rs);padding:.75rem 1rem;font-size:12px;color:var(--t2);margin-bottom:1rem;display:flex;gap:1rem;flex-wrap:wrap}
+.status-bar span{display:flex;align-items:center;gap:4px}
 </style>
 </head>
 <body>
 
+<!-- Login -->
 <div class="lw" id="lp">
   <div class="lc">
-    <h1>💧 PoolCheck Pro</h1>
-    <p>Beheerderspaneel — inloggen</p>
-    <input type="password" id="pw" placeholder="Wachtwoord" onkeydown="if(event.key==='Enter')login()">
-    <button class="btn" style="width:100%;padding:12px;font-size:15px" onclick="login()">Inloggen</button>
-    <p id="lerr" style="color:var(--red);font-size:13px;margin-top:8px;display:none">Verkeerd wachtwoord</p>
+    <h1>PoolCheck Pro</h1>
+    <p>Beheerderspaneel</p>
+    <input type="text"     id="lu" placeholder="Gebruikersnaam of e-mail" autocomplete="username">
+    <input type="password" id="lp2" placeholder="Wachtwoord" autocomplete="current-password"
+           onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn" style="width:100%;padding:12px;font-size:15px;margin-top:4px" onclick="doLogin()">Inloggen</button>
+    <p id="lerr" style="color:var(--red);font-size:13px;margin-top:10px;display:none"></p>
   </div>
 </div>
 
+<!-- App -->
 <div class="layout" id="ap" style="display:none">
   <nav class="side">
-    <div class="side-logo"><span>💧</span><h1>PoolCheck</h1></div>
-    <button class="nav on" onclick="nav('dashboard',this)"><em>📊</em> Dashboard</button>
-    <button class="nav" onclick="nav('woningen',this)"><em>🏊</em> Woningen</button>
-    <button class="nav" onclick="nav('users',this)"><em>👥</em> Gebruikers</button>
-    <button class="nav" onclick="nav('visits',this)"><em>📋</em> Bezoeken</button>
+    <div class="side-logo"><span style="font-size:22px">💧</span><h1>PoolCheck</h1></div>
+    <button class="nav on"  data-pg="dashboard"   onclick="nav(this)"><em>📊</em> Dashboard</button>
+    <button class="nav"     data-pg="zwembaden"   onclick="nav(this)"><em>🏊</em> Zwembaden</button>
+    <button class="nav"     data-pg="users"       onclick="nav(this)"><em>👥</em> Gebruikers</button>
+    <button class="nav"     data-pg="visits"      onclick="nav(this)"><em>📋</em> Bezoeken</button>
+    <button class="nav"     data-pg="settings"    onclick="nav(this)"><em>⚙️</em> Instellingen</button>
     <div class="spacer"></div>
-    <button class="nav" onclick="logout()"><em>🚪</em> Uitloggen</button>
+    <div class="nav-user" id="nav-username"></div>
+    <button class="nav" onclick="doLogout()"><em>🚪</em> Uitloggen</button>
   </nav>
+
   <main class="main">
+
+    <!-- DASHBOARD -->
     <div class="pg v" id="pg-dashboard">
       <h2>Dashboard</h2>
-      <div class="stats" id="stats"><div class="ld"><div class="sp"></div>Laden...</div></div>
-      <div class="card" id="rc"><div class="ld"><div class="sp"></div>Laden...</div></div>
+      <div class="stats" id="dash-stats"><div class="ld"><div class="sp"></div>Laden...</div></div>
+      <div class="card">
+        <div class="card-head">Recente bezoeken</div>
+        <div id="dash-visits"><div class="ld"><div class="sp"></div>Laden...</div></div>
+      </div>
     </div>
-    <div class="pg" id="pg-woningen">
-      <h2>Woningen <button class="btn" onclick="addWoning()">+ Woning toevoegen</button></h2>
-      <div class="card" id="tw"><div class="ld"><div class="sp"></div>Laden...</div></div>
+
+    <!-- ZWEMBADEN -->
+    <div class="pg" id="pg-zwembaden">
+      <h2>Zwembaden <button class="btn" onclick="openAddZwembad()">+ Zwembad toevoegen</button></h2>
+      <div class="card">
+        <div id="zwembaden-table"><div class="ld"><div class="sp"></div>Laden...</div></div>
+      </div>
     </div>
+
+    <!-- GEBRUIKERS -->
     <div class="pg" id="pg-users">
-      <h2>Gebruikers <button class="btn" onclick="addUser()">+ Gebruiker toevoegen</button></h2>
-      <div class="card" id="tu"><div class="ld"><div class="sp"></div>Laden...</div></div>
+      <h2>Gebruikers <button class="btn" onclick="openAddUser()">+ Gebruiker toevoegen</button></h2>
+      <div class="card">
+        <div id="users-table"><div class="ld"><div class="sp"></div>Laden...</div></div>
+      </div>
     </div>
+
+    <!-- BEZOEKEN -->
     <div class="pg" id="pg-visits">
       <h2>Bezoeken</h2>
-      <div class="card" id="tv"><div class="ld"><div class="sp"></div>Laden...</div></div>
+      <div class="card">
+        <div id="visits-table"><div class="ld"><div class="sp"></div>Laden...</div></div>
+      </div>
     </div>
+
+    <!-- INSTELLINGEN -->
+    <div class="pg" id="pg-settings">
+      <h2>Instellingen</h2>
+      <div id="status-bar" class="status-bar" style="display:none"></div>
+
+      <div class="settings-section">
+        <h3>App</h3>
+        <div class="fg"><label>App URL</label><input id="s-base_url" placeholder="https://pool.villaparkfontein.com"><div class="hint">Geen trailing slash. Gebruikt voor QR-links en e-mails.</div></div>
+      </div>
+
+      <div class="settings-section">
+        <h3>E-mail (SMTP)</h3>
+        <div class="fg half">
+          <div class="fg"><label>Mail server</label><input id="s-mail_host" placeholder="villaparkfontein.com"></div>
+          <div class="fg"><label>Poort</label><input id="s-mail_port" placeholder="465"></div>
+        </div>
+        <div class="fg"><label>E-mailadres (afzender + SMTP gebruiker)</label><input id="s-mail_user" placeholder="pool@villaparkfontein.com"></div>
+        <div class="fg"><label>SMTP wachtwoord</label><input type="password" id="s-mail_pass" placeholder="Laat leeg om ongewijzigd te laten"></div>
+        <div class="fg half">
+          <div class="fg"><label>Weergavenaam afzender</label><input id="s-mail_name" placeholder="PoolCheck Pro"></div>
+          <div class="fg"><label>Manager e-mail (kopie rapporten)</label><input id="s-manager_email"></div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Claude Vision API</h3>
+        <div class="fg"><label>API Key</label><input id="s-claude_api_key" placeholder="sk-ant-... (laat leeg om ongewijzigd te laten)"></div>
+        <div class="hint" style="margin-top:2px">Voor automatisch uitlezen van teststrips. Vraag een key op via console.anthropic.com</div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Wachtwoord wijzigen</h3>
+        <div class="fg"><label>Nieuw wachtwoord</label><input type="password" id="s-new_password" placeholder="Laat leeg om ongewijzigd te laten"></div>
+      </div>
+
+      <button class="btn" onclick="saveSettings()" style="padding:11px 24px">Instellingen opslaan</button>
+      <button class="btn btn-out" onclick="loadDemoData()" style="margin-left:8px">Testdata laden</button>
+    </div>
+
   </main>
 </div>
 
-<div class="overlay" id="ov" style="display:none" onclick="if(event.target===this)closeM()">
-  <div class="modal" id="mb"></div>
+<!-- MODAL ZWEMBAD -->
+<div class="overlay" id="m-zwembad" style="display:none" onclick="if(event.target===this)closeModal('m-zwembad')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="mz-title">Zwembad toevoegen</h3>
+    <input type="hidden" id="mz-id">
+    <div class="fg half">
+      <div class="fg"><label>Naam zwembad *</label><input id="mz-name"></div>
+      <div class="fg"><label>Type</label>
+        <select id="mz-type">
+          <option>Privé buitenbad</option><option>Privé binnenbad</option>
+          <option>Privé spa</option><option>Hotel binnenbad</option>
+          <option>Hotel buitenbad</option><option>Recreatiebad</option>
+        </select>
+      </div>
+    </div>
+    <div class="fg half">
+      <div class="fg"><label>Naam eigenaar</label><input id="mz-owner"></div>
+      <div class="fg"><label>E-mail eigenaar</label><input id="mz-email" type="email"></div>
+    </div>
+    <div class="fg half">
+      <div class="fg"><label>Telefoon</label><input id="mz-phone"></div>
+      <div class="fg"><label>Volume (liter)</label><input id="mz-volume" type="number" placeholder="40000"></div>
+    </div>
+    <div class="fg"><label>Adres</label><input id="mz-address"></div>
+    <div class="fg"><label>Notities</label><textarea id="mz-notes"></textarea></div>
+    <label class="check-row"><input type="checkbox" id="mz-public"> Publiek zichtbaar (verhuur/gasten kunnen laatste testresultaat zien)</label>
+    <div id="mz-qr-section" style="display:none;margin-top:1rem">
+      <div class="hint" style="margin-bottom:6px">QR-link voor dit zwembad:</div>
+      <div class="link-row">
+        <div class="link-box" id="mz-qr-url"></div>
+        <button class="btn btn-ghost btn-sm" onclick="copyText('mz-qr-url')">Kopieer</button>
+      </div>
+    </div>
+    <div class="mbtns">
+      <button class="btn btn-out" onclick="closeModal('m-zwembad')">Annuleren</button>
+      <button class="btn" onclick="saveZwembad()">Opslaan</button>
+    </div>
+  </div>
 </div>
-<div class="toast" id="t"></div>
+
+<!-- MODAL GEBRUIKER -->
+<div class="overlay" id="m-user" style="display:none" onclick="if(event.target===this)closeModal('m-user')">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h3 id="mu-title">Gebruiker toevoegen</h3>
+    <input type="hidden" id="mu-id">
+    <div class="fg half">
+      <div class="fg"><label>Naam *</label><input id="mu-name"></div>
+      <div class="fg"><label>E-mail</label><input id="mu-email" type="email"></div>
+    </div>
+    <div class="fg"><label>Telefoon</label><input id="mu-phone"></div>
+    <div class="fg">
+      <label>Rollen</label>
+      <label class="check-row"><input type="checkbox" id="mu-role-user" checked> Gebruiker (toegang via magic link)</label>
+      <label class="check-row"><input type="checkbox" id="mu-role-admin"> Admin (toegang tot beheerderspaneel)</label>
+    </div>
+    <div class="fg" id="mu-pass-row">
+      <label>Wachtwoord <span style="font-weight:400;color:var(--t3)">(vereist voor admin)</span></label>
+      <input type="password" id="mu-password" placeholder="Laat leeg om ongewijzigd te laten">
+    </div>
+    <div class="fg">
+      <label>Gekoppelde zwembaden</label>
+      <div id="mu-zwembaden" style="max-height:140px;overflow-y:auto;border:1.5px solid var(--bd);border-radius:var(--rs);padding:8px"></div>
+    </div>
+    <div id="mu-link-section" style="display:none;margin-top:.5rem">
+      <div class="hint" style="margin-bottom:6px">Magic link voor deze gebruiker:</div>
+      <div class="link-row">
+        <div class="link-box" id="mu-magic-link"></div>
+        <button class="btn btn-ghost btn-sm" onclick="copyText('mu-magic-link')">Kopieer</button>
+        <button class="btn btn-ghost btn-sm" onclick="sendLink()">Mail</button>
+      </div>
+    </div>
+    <div class="mbtns">
+      <button class="btn btn-out" onclick="closeModal('m-user')">Annuleren</button>
+      <button class="btn" onclick="saveUser()">Opslaan</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
 
 <script>
-const A = 'api.php';
-let W = [], U = [], V = [];
+const API = 'api.php';
+let Z = [], U = [], V = [];
+let currentUserId = null;
 
-// ─── API ───────────────────────────────────────────
-async function call(action, method, body) {
-  const r = await fetch(A + '?action=' + action, {
-    method: method || 'GET',
-    headers: body ? { 'Content-Type': 'application/json' } : {},
-    body: body ? JSON.stringify(body) : undefined
-  });
+// ── API helper ────────────────────────────────────────────────
+async function call(action, method = 'GET', body = null) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const r = await fetch(`${API}?action=${action}`, opts);
   const d = await r.json();
-  if (d.error) throw new Error(d.error);
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
   return d;
 }
 
-// ─── AUTH ──────────────────────────────────────────
-async function login() {
+// ── Auth ──────────────────────────────────────────────────────
+async function doLogin() {
+  const username = document.getElementById('lu').value.trim();
+  const password = document.getElementById('lp2').value;
+  const err      = document.getElementById('lerr');
+  err.style.display = 'none';
   try {
-    await call('admin_login', 'POST', { password: document.getElementById('pw').value });
-    showApp();
-  } catch { document.getElementById('lerr').style.display = 'block'; }
+    const d = await call('admin_login', 'POST', { username, password });
+    document.getElementById('nav-username').textContent = d.name;
+    document.getElementById('lp').style.display  = 'none';
+    document.getElementById('ap').style.display  = 'flex';
+    loadAll();
+  } catch (e) {
+    err.textContent    = e.message;
+    err.style.display  = 'block';
+  }
 }
-async function logout() { await call('admin_logout', 'POST').catch(() => {}); location.reload(); }
+
+async function doLogout() {
+  await call('admin_logout', 'POST').catch(() => {});
+  location.reload();
+}
+
 async function checkLogin() {
-  const d = await call('admin_check').catch(() => ({ logged_in: false }));
-  if (d.logged_in) showApp();
-}
-
-async function showApp() {
-  document.getElementById('lp').style.display = 'none';
-  document.getElementById('ap').style.display = 'flex';
-  // Auto-migratie: draait als versie verschilt (veilig, idempotent)
   try {
-    const m = await call('auto_migrate', 'POST');
-    if (m.ran) console.log('Auto-migratie:', m.message);
-  } catch(e) { console.warn('Migratie check:', e.message); }
-  await reload();
+    const d = await call('admin_check');
+    if (d.logged_in) {
+      document.getElementById('nav-username').textContent = d.name;
+      document.getElementById('lp').style.display = 'none';
+      document.getElementById('ap').style.display = 'flex';
+      loadAll();
+    }
+  } catch (e) {}
 }
 
-async function reload() {
-  // Load each independently so one failure doesn't block others
-  const errHtml = (msg) => `<div style="padding:1.5rem;color:var(--red);font-size:13px">❌ ${msg}<br><br>
-    <a href="debug.php" target="_blank" style="color:var(--gd)">Open debug.php</a> voor diagnose &nbsp;|&nbsp;
-    <a href="migrate.php" target="_blank" style="color:var(--gd)">Voer migrate.php uit</a> als tabellen ontbreken</div>`;
-
-  try { const d = await call('admin_woningen'); W = d.woningen || []; drawWoningen(); }
-  catch(e) { document.getElementById('tw').innerHTML = errHtml('Woningen laden mislukt: ' + e.message); }
-
-  try { const d = await call('admin_users'); U = d.users || []; drawUsers(); }
-  catch(e) { document.getElementById('tu').innerHTML = errHtml('Gebruikers laden mislukt: ' + e.message); }
-
-  try { const d = await call('admin_visits'); V = d.visits || []; drawVisits(); }
-  catch(e) { document.getElementById('tv').innerHTML = errHtml('Bezoeken laden mislukt: ' + e.message); }
-
-  drawDash();
-}
-
-// ─── NAV ───────────────────────────────────────────
-function nav(p, btn) {
+// ── Navigation ────────────────────────────────────────────────
+function nav(btn) {
   document.querySelectorAll('.nav').forEach(b => b.classList.remove('on'));
   btn.classList.add('on');
-  document.querySelectorAll('.pg').forEach(x => x.classList.remove('v'));
-  document.getElementById('pg-' + p).classList.add('v');
+  document.querySelectorAll('.pg').forEach(p => p.classList.remove('v'));
+  document.getElementById('pg-' + btn.dataset.pg).classList.add('v');
+  if (btn.dataset.pg === 'settings') loadSettings();
 }
 
-// ─── DASHBOARD ─────────────────────────────────────
-function drawDash() {
-  const wk = V.filter(v => new Date(v.visit_date) >= new Date(Date.now() - 7 * 86400000)).length;
-  document.getElementById('stats').innerHTML = `
-    <div class="stat"><div class="stat-v">${W.filter(w => w.active == 1).length}</div><div class="stat-l">Actieve woningen</div></div>
-    <div class="stat"><div class="stat-v">${U.filter(u => u.active == 1).length}</div><div class="stat-l">Gebruikers</div></div>
-    <div class="stat"><div class="stat-v">${V.length}</div><div class="stat-l">Totaal bezoeken</div></div>
-    <div class="stat"><div class="stat-v">${wk}</div><div class="stat-l">Bezoeken afgelopen week</div></div>`;
-  document.getElementById('rc').innerHTML = visitTable(V.slice(0, 10));
-  // Load version info
-  call('app_status').then(s => {
-    const match = s.match;
-    const vDiv = document.createElement('div');
-    vDiv.style.cssText = 'margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;background:var(--bg);border-radius:8px;font-size:12px';
-    const parts = [];
-    if (match) {
-      parts.push(`<span style="background:#eaf3de;color:#2d6a4f;padding:3px 10px;border-radius:20px;font-weight:600">✓ v${s.file_version}</span>`);
-    } else {
-      parts.push(`<span style="background:#faeeda;color:#7a4f00;padding:3px 10px;border-radius:20px;font-weight:600">⟳ Bestanden: ${s.file_version} | DB: ${s.db_version} — auto-migratie draait bij volgende login</span>`);
-    }
-    if (s.last_deploy) parts.push(`<span style="color:var(--t3)">Bijgewerkt: ${s.last_deploy}</span>`);
-    parts.push(`<span style="color:var(--t3)">${s.api_key_set ? '🔑 AI OK' : '⚠ API key ontbreekt in api.php'}</span>`);
-    vDiv.innerHTML = parts.join('');
-    document.getElementById('pg-dashboard').insertAdjacentElement('afterbegin', vDiv);
-  }).catch(() => {});
+// ── Load all data ─────────────────────────────────────────────
+function loadAll() {
+  loadZwembaden();
+  loadUsers();
+  loadVisits();
+  loadDashboard();
 }
 
-// ─── WONINGEN ──────────────────────────────────────
-function drawWoningen() {
-  if (!W.length) { document.getElementById('tw').innerHTML = '<div class="empty">Nog geen woningen. Klik "+ Woning toevoegen" om te beginnen.</div>'; return; }
-  document.getElementById('tw').innerHTML = `<table>
-    <thead><tr><th>Naam</th><th>Eigenaar / e-mail</th><th>Type &amp; volume</th><th>Poolcode</th><th>Links</th><th></th></tr></thead>
-    <tbody>${W.map(w => `<tr>
-      <td><b>${e(w.name)}</b>${w.active != 1 ? ' <span class="badge grey">inactief</span>' : ''}<br><small style="color:var(--t3)">${e(w.address || '')}</small></td>
-      <td>${e(w.owner_name || '—')}<br><small style="color:var(--t2)">${e(w.email || '')}</small></td>
-      <td>${e(w.pool_type)}<br><small>${Math.round(w.volume_liters / 1000)}m³</small></td>
-      <td><code style="background:#f0f0ee;padding:2px 6px;border-radius:4px;font-family:monospace;font-size:13px;letter-spacing:.05em">${w.pool_code}</code></td>
-      <td style="font-size:12px;line-height:2.2">
-        <span class="bsm" onclick="showQR('${e(w.name)}','${w.qr_url}')">QR tonen</span> &nbsp;
-        <a href="${w.history_url}" target="_blank" style="color:var(--gd)">Geschiedenis</a>
-      </td>
-      <td><button class="bsm" onclick="editWoning(${w.id})">Bewerken</button></td>
-    </tr>`).join('')}</tbody></table>`;
-}
-
-function showQR(name, url) {
-  const qr = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
-  openM(`<h3>QR code — ${name}</h3>
-    <div style="text-align:center;margin:1rem 0">
-      <img src="${qr}" style="width:180px;height:180px;border:3px solid var(--gd);border-radius:8px;padding:4px" alt="QR">
-      <p style="font-size:12px;color:var(--t2);margin-top:8px">Print en lamineer — bevestig bij het zwembad</p>
-    </div>
-    <div class="lrow"><div class="lb">${url}</div><button class="bsm" onclick="cp('${url}')">Kopieer</button></div>
-    <div style="margin-top:8px;text-align:center"><a href="${qr}" download="qr.png" class="btn bsm" style="font-size:13px">Download PNG</a></div>
-    <div class="mbtns"><button class="btn bout" onclick="closeM()">Sluiten</button></div>`);
-}
-
-function addWoning() {
-  openM(`<h3>Woning toevoegen</h3>
-    <div class="fg h"><div class="fg"><label>Naam *</label><input id="a-n" placeholder="Villa Janssen"></div><div class="fg"><label>Eigenaar</label><input id="a-o" placeholder="Peter Janssen"></div></div>
-    <div class="fg h"><div class="fg"><label>E-mail eigenaar</label><input id="a-e" type="email" placeholder="klant@email.com"></div><div class="fg"><label>Telefoon</label><input id="a-ph" placeholder="06-12345678"></div></div>
-    <div class="fg"><label>Adres</label><input id="a-ad" placeholder="Straat 1, Stad"></div>
-    <div class="fg h"><div class="fg"><label>Type zwembad</label><select id="a-t">${poolTypes()}</select></div><div class="fg"><label>Volume (liter)</label><input id="a-v" type="number" value="40000"><div class="hint">Alleen beheerder kan dit wijzigen</div></div></div>
-    <div class="fg"><label>Notities</label><textarea id="a-nt" placeholder="Bijzonderheden..."></textarea></div>
-    <div class="mbtns"><button class="btn bout" onclick="closeM()">Annuleren</button><button class="btn" onclick="saveAddWoning()">Toevoegen</button></div>`);
-}
-
-async function saveAddWoning() {
-  const d = { name: v('a-n'), owner_name: v('a-o'), email: v('a-e'), phone: v('a-ph'), address: v('a-ad'), pool_type: v('a-t'), volume_liters: v('a-v'), notes: v('a-nt') };
-  if (!d.name) { toast('Naam is verplicht'); return; }
+// ── Dashboard ─────────────────────────────────────────────────
+async function loadDashboard() {
   try {
-    const r = await call('add_woning', 'POST', d);
-    await reload();
-    closeM();
-    showQR(d.name, r.qr_url);
-    toast('Woning toegevoegd!');
-  } catch (err) { toast('Fout: ' + err.message); }
+    const [zd, ud, vd] = await Promise.all([
+      call('admin_zwembaden'), call('admin_users'), call('admin_visits')
+    ]);
+    Z = zd.zwembaden || []; U = ud.users || []; V = vd.visits || [];
+
+    document.getElementById('dash-stats').innerHTML = `
+      <div class="stat"><div class="stat-v">${Z.length}</div><div class="stat-l">Zwembaden</div></div>
+      <div class="stat"><div class="stat-v">${U.length}</div><div class="stat-l">Gebruikers</div></div>
+      <div class="stat"><div class="stat-v">${V.length}</div><div class="stat-l">Bezoeken totaal</div></div>
+      <div class="stat"><div class="stat-v">${V.filter(v=>v.visit_date===today()).length}</div><div class="stat-l">Bezoeken vandaag</div></div>
+    `;
+
+    const recent = V.slice(0, 10);
+    document.getElementById('dash-visits').innerHTML = recent.length
+      ? `<table><thead><tr><th>Datum</th><th>Zwembad</th><th>Door</th><th>pH</th><th>Chloor</th><th>Alk</th></tr></thead><tbody>${
+          recent.map(v => `<tr>
+            <td>${v.visit_date}</td>
+            <td>${esc(v.zwembad_name)}</td>
+            <td>${esc(v.user_name||'—')}</td>
+            <td>${badge(v.ph,6.2,7.2,7.6,8.4)}</td>
+            <td>${badge(v.chlorine,0,1,3,10,' ppm')}</td>
+            <td>${badge(v.alkalinity,0,80,120,300,' ppm')}</td>
+          </tr>`).join('')
+        }</tbody></table>`
+      : '<div class="empty">Nog geen bezoeken</div>';
+  } catch (e) { toast('Laad fout: ' + e.message, true); }
 }
 
-function editWoning(id) {
-  const w = W.find(x => x.id == id); if (!w) return;
-  openM(`<h3>Woning bewerken</h3>
-    <div class="fg h"><div class="fg"><label>Naam *</label><input id="e-n" value="${e(w.name)}"></div><div class="fg"><label>Eigenaar</label><input id="e-o" value="${e(w.owner_name || '')}"></div></div>
-    <div class="fg h"><div class="fg"><label>E-mail</label><input id="e-e" type="email" value="${e(w.email || '')}"></div><div class="fg"><label>Telefoon</label><input id="e-ph" value="${e(w.phone || '')}"></div></div>
-    <div class="fg"><label>Adres</label><input id="e-ad" value="${e(w.address || '')}"></div>
-    <div class="fg h"><div class="fg"><label>Type</label><select id="e-t">${poolTypes(w.pool_type)}</select></div><div class="fg"><label>Volume (liter)</label><input id="e-v" type="number" value="${w.volume_liters}"><div class="hint">Alleen beheerder kan dit wijzigen</div></div></div>
-    <div class="fg h"><div class="fg"><label>Status</label><select id="e-ac"><option value="1"${w.active == 1 ? ' selected' : ''}>Actief</option><option value="0"${w.active != 1 ? ' selected' : ''}>Inactief</option></select></div><div></div></div>
-    <div class="fg"><label>Notities</label><textarea id="e-nt">${e(w.notes || '')}</textarea></div>
-    <div style="background:var(--bg);border-radius:8px;padding:10px;font-size:12px;margin-bottom:10px">
-      <b>Poolcode:</b> <code style="background:#fff;padding:2px 6px;border-radius:4px">${w.pool_code}</code> &nbsp;
-      <span class="bsm" onclick="showQR('${e(w.name)}','${w.qr_url}')" style="cursor:pointer">Toon QR</span>
-    </div>
-    <div class="mbtns"><button class="btn bout" onclick="closeM()">Annuleren</button><button class="btn" onclick="saveEditWoning(${id})">Opslaan</button></div>`);
+// ── Zwembaden ─────────────────────────────────────────────────
+async function loadZwembaden() {
+  try {
+    const d = await call('admin_zwembaden');
+    Z = d.zwembaden || [];
+    drawZwembaden();
+  } catch (e) {}
 }
 
-async function saveEditWoning(id) {
-  const d = { id, name: v('e-n'), owner_name: v('e-o'), email: v('e-e'), phone: v('e-ph'), address: v('e-ad'), pool_type: v('e-t'), volume_liters: v('e-v'), notes: v('e-nt'), active: v('e-ac') };
-  try { await call('update_woning', 'POST', d); closeM(); await reload(); toast('Opgeslagen!'); }
-  catch (err) { toast('Fout: ' + err.message); }
+function drawZwembaden() {
+  const el = document.getElementById('zwembaden-table');
+  if (!Z.length) { el.innerHTML = '<div class="empty">Nog geen zwembaden. Voeg er een toe.</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Code</th><th>Naam</th><th>Type</th><th>Eigenaar</th><th>Publiek</th><th>QR-link</th><th></th></tr></thead><tbody>${
+    Z.map(z => `<tr>
+      <td><span class="badge b-blue">${esc(z.code)}</span></td>
+      <td><strong>${esc(z.name)}</strong></td>
+      <td>${esc(z.pool_type)}</td>
+      <td>${esc(z.owner_name||'—')}</td>
+      <td>${z.public_visible ? '<span class="badge b-ok">Ja</span>' : '<span class="badge b-grey">Nee</span>'}</td>
+      <td><a href="${esc(z.qr_url)}" target="_blank" style="font-size:11px;color:var(--g)">Link</a></td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openEditZwembad(${z.id})">Bewerken</button></td>
+    </tr>`).join('')
+  }</tbody></table>`;
 }
 
-// ─── USERS ─────────────────────────────────────────
+function openAddZwembad() {
+  document.getElementById('mz-title').textContent = 'Zwembad toevoegen';
+  document.getElementById('mz-id').value    = '';
+  document.getElementById('mz-name').value  = '';
+  document.getElementById('mz-owner').value = '';
+  document.getElementById('mz-email').value = '';
+  document.getElementById('mz-phone').value = '';
+  document.getElementById('mz-address').value = '';
+  document.getElementById('mz-notes').value  = '';
+  document.getElementById('mz-volume').value = '40000';
+  document.getElementById('mz-type').value   = 'Privé buitenbad';
+  document.getElementById('mz-public').checked = false;
+  document.getElementById('mz-qr-section').style.display = 'none';
+  openModal('m-zwembad');
+}
+
+function openEditZwembad(id) {
+  const z = Z.find(x => x.id === id);
+  if (!z) return;
+  document.getElementById('mz-title').textContent = 'Zwembad bewerken';
+  document.getElementById('mz-id').value     = z.id;
+  document.getElementById('mz-name').value   = z.name;
+  document.getElementById('mz-owner').value  = z.owner_name || '';
+  document.getElementById('mz-email').value  = z.email || '';
+  document.getElementById('mz-phone').value  = z.phone || '';
+  document.getElementById('mz-address').value = z.address || '';
+  document.getElementById('mz-notes').value  = z.notes || '';
+  document.getElementById('mz-volume').value = z.volume_liters || 40000;
+  document.getElementById('mz-type').value   = z.pool_type || 'Privé buitenbad';
+  document.getElementById('mz-public').checked = !!z.public_visible;
+  document.getElementById('mz-qr-url').textContent = z.qr_url || '';
+  document.getElementById('mz-qr-section').style.display = 'block';
+  openModal('m-zwembad');
+}
+
+async function saveZwembad() {
+  const id   = document.getElementById('mz-id').value;
+  const data = {
+    id:             id || undefined,
+    name:           document.getElementById('mz-name').value.trim(),
+    owner_name:     document.getElementById('mz-owner').value.trim(),
+    email:          document.getElementById('mz-email').value.trim(),
+    phone:          document.getElementById('mz-phone').value.trim(),
+    address:        document.getElementById('mz-address').value.trim(),
+    notes:          document.getElementById('mz-notes').value.trim(),
+    volume_liters:  document.getElementById('mz-volume').value,
+    pool_type:      document.getElementById('mz-type').value,
+    public_visible: document.getElementById('mz-public').checked ? 1 : 0,
+  };
+  if (!data.name) return toast('Naam is verplicht', true);
+  try {
+    const action = id ? 'update_zwembad' : 'add_zwembad';
+    const d = await call(action, 'POST', data);
+    closeModal('m-zwembad');
+    toast(id ? 'Zwembad bijgewerkt' : `Zwembad aangemaakt (${d.code})`);
+    loadZwembaden();
+    loadDashboard();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Gebruikers ────────────────────────────────────────────────
+async function loadUsers() {
+  try {
+    const d = await call('admin_users');
+    U = d.users || [];
+    drawUsers();
+  } catch (e) {}
+}
+
 function drawUsers() {
-  if (!U.length) { document.getElementById('tu').innerHTML = '<div class="empty">Nog geen gebruikers.</div>'; return; }
-  document.getElementById('tu').innerHTML = `<table>
-    <thead><tr><th>Naam</th><th>Rollen</th><th>E-mail</th><th>Woningen (klant)</th><th>Magic link</th><th></th></tr></thead>
-    <tbody>${U.map(u => {
-      const roles = u.roles.split(',').map(r => `<span class="badge role">${r.trim()}</span>`).join(' ');
-      const wl = (u.woningen || []).map(w => w.name).join(', ') || '—';
-      return `<tr>
-        <td><b>${e(u.name)}</b>${u.active != 1 ? ' <span class="badge grey">inactief</span>' : ''}</td>
-        <td>${roles}</td>
-        <td style="font-size:12px">${e(u.email)}</td>
-        <td style="font-size:12px;color:var(--t2)">${e(wl)}</td>
-        <td><div class="lrow"><div class="lb" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${u.magic_link}</div><button class="bsm" onclick="cp('${u.magic_link}')">Kopieer</button></div></td>
-        <td><button class="bsm" onclick="editUser(${u.id})">Bewerken</button></td>
-      </tr>`;
-    }).join('')}</tbody></table>`;
+  const el = document.getElementById('users-table');
+  if (!U.length) { el.innerHTML = '<div class="empty">Nog geen gebruikers.</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Code</th><th>Naam</th><th>E-mail</th><th>Rollen</th><th>Zwembaden</th><th>Status</th><th></th></tr></thead><tbody>${
+    U.map(u => `<tr>
+      <td><span class="badge b-blue">${esc(u.code)}</span></td>
+      <td><strong>${esc(u.name)}</strong></td>
+      <td>${esc(u.email||'—')}</td>
+      <td>${roleBadges(u.roles)}</td>
+      <td style="font-size:12px">${(u.zwembaden||[]).map(z=>`<span class="badge b-grey">${esc(z.code)}</span>`).join(' ')||'—'}</td>
+      <td>${u.active ? '<span class="badge b-ok">Actief</span>' : '<span class="badge b-grey">Inactief</span>'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="openEditUser(${u.id})">Bewerken</button></td>
+    </tr>`).join('')
+  }</tbody></table>`;
 }
 
-function addUser() {
-  const wOpts = W.map(w => `<label class="rcb"><input type="checkbox" class="nuw" value="${w.id}"> ${e(w.name)}</label>`).join('');
-  openM(`<h3>Gebruiker toevoegen</h3>
-    <div class="fg h"><div class="fg"><label>Naam *</label><input id="nu-n" placeholder="Tycho Hombergen"></div><div class="fg"><label>E-mail *</label><input id="nu-e" type="email" placeholder="tycho@email.com"></div></div>
-    <div class="fg"><label>Telefoon</label><input id="nu-ph" placeholder="06-12345678"></div>
-    <div class="fg"><label>Rollen</label>
-      <label class="rcb"><input type="checkbox" id="nr-m" checked> <b>Monteur</b> — kan bezoeken invoeren voor alle woningen</label>
-      <label class="rcb"><input type="checkbox" id="nr-k"> <b>Klant</b> — ziet geschiedenis eigen woning, kan zelf invoeren</label>
-      <label class="rcb"><input type="checkbox" id="nr-a"> <b>Admin</b> — toegang tot beheerderspaneel</label>
-    </div>
-    ${wOpts ? `<div class="fg"><label>Koppel aan woningen (voor klant-rol)</label>${wOpts}</div>` : ''}
-    <div class="mbtns"><button class="btn bout" onclick="closeM()">Annuleren</button><button class="btn" onclick="saveAddUser()">Toevoegen</button></div>`);
+function roleBadges(roles) {
+  return (roles||'').split(',').map(r => r.trim()).filter(Boolean).map(r =>
+    r === 'admin' ? `<span class="badge b-admin">admin</span>` : `<span class="badge b-blue">user</span>`
+  ).join(' ');
 }
 
-async function saveAddUser() {
-  const roles = [['nr-m','monteur'],['nr-k','klant'],['nr-a','admin']].filter(([id]) => document.getElementById(id)?.checked).map(([,r]) => r).join(',') || 'monteur';
-  const wids = [...document.querySelectorAll('.nuw:checked')].map(i => +i.value);
-  const d = { name: v('nu-n'), email: v('nu-e'), phone: v('nu-ph'), roles, woning_ids: wids };
-  if (!d.name || !d.email) { toast('Naam en e-mail zijn verplicht'); return; }
+function openAddUser() {
+  currentUserId = null;
+  document.getElementById('mu-title').textContent = 'Gebruiker toevoegen';
+  document.getElementById('mu-id').value    = '';
+  document.getElementById('mu-name').value  = '';
+  document.getElementById('mu-email').value = '';
+  document.getElementById('mu-phone').value = '';
+  document.getElementById('mu-password').value = '';
+  document.getElementById('mu-role-user').checked  = true;
+  document.getElementById('mu-role-admin').checked = false;
+  document.getElementById('mu-link-section').style.display = 'none';
+  drawZwembadCheckboxes([]);
+  openModal('m-user');
+}
+
+function openEditUser(id) {
+  const u = U.find(x => x.id === id);
+  if (!u) return;
+  currentUserId = id;
+  document.getElementById('mu-title').textContent = 'Gebruiker bewerken';
+  document.getElementById('mu-id').value    = u.id;
+  document.getElementById('mu-name').value  = u.name;
+  document.getElementById('mu-email').value = u.email || '';
+  document.getElementById('mu-phone').value = u.phone || '';
+  document.getElementById('mu-password').value = '';
+  document.getElementById('mu-role-user').checked  = (u.roles||'').includes('user');
+  document.getElementById('mu-role-admin').checked = (u.roles||'').includes('admin');
+  const linked = (u.zwembaden||[]).map(z => z.id);
+  drawZwembadCheckboxes(linked);
+  if (u.magic_link) {
+    document.getElementById('mu-magic-link').textContent = u.magic_link;
+    document.getElementById('mu-link-section').style.display = 'block';
+  }
+  openModal('m-user');
+}
+
+function drawZwembadCheckboxes(linkedIds) {
+  const el = document.getElementById('mu-zwembaden');
+  el.innerHTML = Z.length
+    ? Z.map(z => `<label class="check-row" style="margin-bottom:2px">
+        <input type="checkbox" data-zid="${z.id}" ${linkedIds.includes(z.id)?'checked':''}>
+        <span class="badge b-blue" style="margin-right:4px">${esc(z.code)}</span>${esc(z.name)}
+      </label>`).join('')
+    : '<span style="font-size:12px;color:var(--t3)">Nog geen zwembaden aangemaakt.</span>';
+}
+
+async function saveUser() {
+  const id    = document.getElementById('mu-id').value;
+  const roles = [
+    document.getElementById('mu-role-user').checked  ? 'user'  : null,
+    document.getElementById('mu-role-admin').checked ? 'admin' : null,
+  ].filter(Boolean).join(',') || 'user';
+
+  const data = {
+    id:       id || undefined,
+    name:     document.getElementById('mu-name').value.trim(),
+    email:    document.getElementById('mu-email').value.trim(),
+    phone:    document.getElementById('mu-phone').value.trim(),
+    password: document.getElementById('mu-password').value,
+    roles,
+    active: 1,
+  };
+  if (!data.name) return toast('Naam is verplicht', true);
+
   try {
-    const r = await call('add_user', 'POST', d);
-    await reload(); closeM();
-    openM(`<h3>Gebruiker toegevoegd!</h3>
-      <p style="font-size:13px;color:var(--t2);margin-bottom:10px">Stuur deze magic link naar <b>${e(d.name)}</b>. Sla op als bladwijzer of homescreen-icoon:</p>
-      <div class="lrow"><div class="lb">${r.magic_link}</div><button class="bsm" onclick="cp('${r.magic_link}')">Kopieer</button></div>
-      <div class="mbtns"><button class="btn" onclick="closeM()">OK</button></div>`);
-    toast('Gebruiker toegevoegd!');
-  } catch (err) { toast('Fout: ' + err.message); }
+    const action = id ? 'update_user' : 'add_user';
+    const d = await call(action, 'POST', data);
+
+    // Zwembad-koppelingen synchroniseren
+    const userId = id ? parseInt(id) : d.id;
+    if (userId) {
+      const checked = [...document.querySelectorAll('#mu-zwembaden input[type=checkbox]')]
+        .filter(c => c.checked).map(c => parseInt(c.dataset.zid));
+      const prev = id ? (U.find(u=>u.id==id)?.zwembaden||[]).map(z=>z.id) : [];
+      const toAdd = checked.filter(zid => !prev.includes(zid));
+      const toRem = prev.filter(zid  => !checked.includes(zid));
+      for (const zid of toAdd) await call('link_user_zwembad',   'POST', { user_id: userId, zwembad_id: zid }).catch(()=>{});
+      for (const zid of toRem) await call('unlink_user_zwembad', 'POST', { user_id: userId, zwembad_id: zid }).catch(()=>{});
+    }
+
+    if (!id && d.magic_link) {
+      document.getElementById('mu-magic-link').textContent = d.magic_link;
+      document.getElementById('mu-link-section').style.display = 'block';
+      document.getElementById('mu-id').value = d.id;
+      currentUserId = d.id;
+      toast(`Gebruiker aangemaakt (${d.code})`);
+    } else {
+      closeModal('m-user');
+      toast(id ? 'Gebruiker bijgewerkt' : 'Gebruiker aangemaakt');
+    }
+    loadUsers();
+    loadDashboard();
+  } catch (e) { toast(e.message, true); }
 }
 
-function editUser(id) {
-  const u = U.find(x => x.id == id); if (!u) return;
-  const ur = u.roles.split(',').map(r => r.trim());
-  const wOpts = W.map(w => {
-    const linked = (u.woningen || []).some(uw => uw.id == w.id);
-    return `<label class="rcb"><input type="checkbox" class="euw" value="${w.id}"${linked ? ' checked' : ''}> ${e(w.name)}</label>`;
-  }).join('');
-  openM(`<h3>Gebruiker bewerken</h3>
-    <div class="fg h"><div class="fg"><label>Naam *</label><input id="eu-n" value="${e(u.name)}"></div><div class="fg"><label>E-mail *</label><input id="eu-e" value="${e(u.email)}"></div></div>
-    <div class="fg h"><div class="fg"><label>Telefoon</label><input id="eu-ph" value="${e(u.phone || '')}"></div><div class="fg"><label>Status</label><select id="eu-ac"><option value="1"${u.active == 1 ? ' selected' : ''}>Actief</option><option value="0"${u.active != 1 ? ' selected' : ''}>Inactief</option></select></div></div>
-    <div class="fg"><label>Rollen</label>
-      <label class="rcb"><input type="checkbox" id="er-m"${ur.includes('monteur') ? ' checked' : ''}> Monteur</label>
-      <label class="rcb"><input type="checkbox" id="er-k"${ur.includes('klant')   ? ' checked' : ''}> Klant</label>
-      <label class="rcb"><input type="checkbox" id="er-a"${ur.includes('admin')   ? ' checked' : ''}> Admin</label>
-    </div>
-    ${wOpts ? `<div class="fg"><label>Gekoppelde woningen</label>${wOpts}</div>` : ''}
-    <div style="background:var(--bg);border-radius:8px;padding:9px;font-size:12px;margin:8px 0">
-      <b>Magic link:</b><div class="lrow" style="margin-top:4px"><div class="lb">${u.magic_link}</div><button class="bsm" onclick="cp('${u.magic_link}')">Kopieer</button></div>
-    </div>
-    <div class="mbtns"><button class="btn bout" onclick="closeM()">Annuleren</button><button class="btn" onclick="saveEditUser(${id})">Opslaan</button></div>`);
-}
-
-async function saveEditUser(id) {
-  const roles = [['er-m','monteur'],['er-k','klant'],['er-a','admin']].filter(([i]) => document.getElementById(i)?.checked).map(([,r]) => r).join(',') || 'monteur';
-  const wids = [...document.querySelectorAll('.euw:checked')].map(i => +i.value);
-  const d = { id, name: v('eu-n'), email: v('eu-e'), phone: v('eu-ph'), roles, active: v('eu-ac') };
+async function sendLink() {
+  const id = document.getElementById('mu-id').value || currentUserId;
+  if (!id) return toast('Sla de gebruiker eerst op', true);
   try {
-    await call('update_user', 'POST', d);
-    for (const wid of wids) await call('link_user_woning', 'POST', { user_id: id, woning_id: wid }).catch(() => {});
-    closeM(); await reload(); toast('Opgeslagen!');
-  } catch (err) { toast('Fout: ' + err.message); }
+    const d = await call('send_magic_link', 'POST', { user_id: parseInt(id) });
+    toast(d.success ? 'Magic link verstuurd per e-mail' : 'Versturen mislukt — controleer SMTP instellingen', !d.success);
+  } catch (e) { toast(e.message, true); }
 }
 
-// ─── VISITS ────────────────────────────────────────
-function visitTable(vs) {
-  if (!vs.length) return '<div class="empty">Nog geen bezoeken</div>';
-  return `<table>
-    <thead><tr><th>Datum</th><th>Woning</th><th>Monteur</th><th>pH</th><th>Chloor</th><th>Status</th><th></th></tr></thead>
-    <tbody>${vs.map(v => {
-      const items = v.advice_json?.items || [];
-      const iss = items.filter(i => i.level !== 'ok').length;
-      const b = iss === 0 ? '<span class="badge ok">Alles OK</span>' : `<span class="badge warn">${iss} punt${iss > 1 ? 'en' : ''}</span>`;
-      return `<tr><td>${v.visit_date}</td><td>${e(v.woning_name || '—')}</td><td>${e(v.user_name || '—')}</td><td>${v.ph}</td><td>${v.chlorine} ppm</td><td>${b}</td><td><button class="bsm" onclick='showVisit(${JSON.stringify(v).replace(/'/g, "\\'")} )'>Details</button></td></tr>`;
-    }).join('')}</tbody></table>`;
+// ── Bezoeken ─────────────────────────────────────────────────
+async function loadVisits() {
+  try {
+    const d = await call('admin_visits');
+    V = d.visits || [];
+    drawVisits();
+  } catch (e) {}
 }
 
-function drawVisits() { document.getElementById('tv').innerHTML = visitTable(V); }
-
-function showVisit(v) {
-  const items = v.advice_json?.items || [];
-  const iHtml = items.map(i => {
-    const bg = i.level==='ok'?'#eaf3de':i.level==='warn'?'#faeeda':'#fcebeb';
-    const c = i.level==='ok'?'#2d6a4f':i.level==='warn'?'#7a4f00':'#8b1c1c';
-    const dose = (i.dose_today || i.dose) ? `<br><b>→ ${i.dose_today || i.dose}</b>` : '';
-    return `<div style="background:${bg};border-left:3px solid ${c};padding:8px 11px;border-radius:4px;margin-bottom:5px;font-size:13px"><b style="color:${c}">${i.title}</b>${dose}</div>`;
-  }).join('');
-  const photos = [v.strip_photo, v.confirm_photo_chemicals, v.confirm_photo_pool].filter(Boolean);
-  openM(`<h3>Bezoek #${v.id} — ${e(v.woning_name||'—')}</h3>
-    <p style="font-size:12px;color:var(--t2);margin-bottom:12px">${v.visit_date} ${v.visit_time} — ${e(v.user_name||'Onbekend')}</p>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
-      ${[['pH',v.ph],['Chloor',v.chlorine+' ppm'],['Alk.',v.alkalinity+' ppm'],['Stab.',v.stabilizer?v.stabilizer+' ppm':'—']].map(([l,val])=>`<div style="background:var(--bg);padding:9px 6px;border-radius:8px;text-align:center"><div style="font-size:17px;font-weight:700">${val}</div><div style="font-size:11px;color:var(--t2)">${l}</div></div>`).join('')}
-    </div>
-    ${iHtml}
-    ${v.notes?`<p style="font-size:12px;color:var(--t2);margin-top:8px"><b>Notities:</b> ${e(v.notes)}</p>`:''}
-    ${photos.length?`<div style="margin-top:10px">${photos.map(u=>`<a href="${u}" target="_blank"><img src="${u}" style="width:80px;height:65px;object-fit:cover;border-radius:6px;margin-right:6px"></a>`).join('')}</div>`:''}
-    <div class="mbtns"><button class="btn bout" onclick="closeM()">Sluiten</button></div>`);
+function drawVisits() {
+  const el = document.getElementById('visits-table');
+  if (!V.length) { el.innerHTML = '<div class="empty">Nog geen bezoeken.</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Datum</th><th>Zwembad</th><th>Door</th><th>pH</th><th>Chloor</th><th>Alk.</th><th>Stab.</th><th>Mail</th></tr></thead><tbody>${
+    V.map(v => `<tr>
+      <td style="white-space:nowrap">${v.visit_date}</td>
+      <td>${esc(v.zwembad_name)}</td>
+      <td>${esc(v.user_name||'—')}</td>
+      <td>${badge(v.ph,6.2,7.2,7.6,8.4)}</td>
+      <td>${badge(v.chlorine,0,1,3,10,' ppm')}</td>
+      <td>${badge(v.alkalinity,0,80,120,300,' ppm')}</td>
+      <td>${v.stabilizer!=null?badge(v.stabilizer,0,30,80,200,' ppm'):'—'}</td>
+      <td>${v.email_sent ? '<span class="badge b-ok">✓</span>' : '<span class="badge b-grey">—</span>'}</td>
+    </tr>`).join('')
+  }</tbody></table>`;
 }
 
-// ─── UTILS ─────────────────────────────────────────
-function poolTypes(sel) {
-  return ['Privé buitenbad','Privé binnenbad','Hotel binnenbad','Privé spa','Publiek zwembad'].map(t => `<option${t===sel?' selected':''}>${t}</option>`).join('');
-}
-function v(id) { return document.getElementById(id)?.value || ''; }
-function e(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
-function openM(h) { document.getElementById('mb').innerHTML = h; document.getElementById('ov').style.display = 'flex'; }
-function closeM() { document.getElementById('ov').style.display = 'none'; }
-function cp(t) { navigator.clipboard?.writeText(t).then(() => toast('Gekopieerd!')).catch(() => {}); }
-function toast(m) { const t=document.getElementById('t'); t.textContent=m; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2500); }
+// ── Instellingen ──────────────────────────────────────────────
+async function loadSettings() {
+  try {
+    const [s, st] = await Promise.all([call('admin_settings'), call('app_status')]);
+    document.getElementById('s-base_url').value      = s.base_url      || '';
+    document.getElementById('s-mail_host').value     = s.mail_host     || '';
+    document.getElementById('s-mail_port').value     = s.mail_port     || '465';
+    document.getElementById('s-mail_user').value     = s.mail_user     || '';
+    document.getElementById('s-mail_name').value     = s.mail_name     || 'PoolCheck Pro';
+    document.getElementById('s-manager_email').value = s.manager_email || '';
+    document.getElementById('s-claude_api_key').value = '';
 
+    const bar = document.getElementById('status-bar');
+    bar.style.display = 'flex';
+    bar.innerHTML = `
+      <span>Bestand: <strong>${st.file_version}</strong></span>
+      <span>Database: <strong>${st.db_version}</strong></span>
+      <span>Laatste deploy: <strong>${st.last_deploy||'—'}</strong></span>
+      <span>AI key: <strong>${s.api_key_set ? '✓ Ingesteld' : '✗ Niet ingesteld'}</strong></span>
+    `;
+  } catch (e) { toast('Instellingen laden mislukt', true); }
+}
+
+async function saveSettings() {
+  const data = {
+    base_url:       document.getElementById('s-base_url').value.trim(),
+    mail_host:      document.getElementById('s-mail_host').value.trim(),
+    mail_port:      document.getElementById('s-mail_port').value.trim(),
+    mail_user:      document.getElementById('s-mail_user').value.trim(),
+    mail_pass:      document.getElementById('s-mail_pass').value,
+    mail_name:      document.getElementById('s-mail_name').value.trim(),
+    manager_email:  document.getElementById('s-manager_email').value.trim(),
+    claude_api_key: document.getElementById('s-claude_api_key').value.trim(),
+    new_password:   document.getElementById('s-new_password').value,
+  };
+  try {
+    await call('save_settings', 'POST', data);
+    document.getElementById('s-mail_pass').value    = '';
+    document.getElementById('s-new_password').value = '';
+    document.getElementById('s-claude_api_key').value = '';
+    toast('Instellingen opgeslagen');
+    loadSettings();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function loadDemoData() {
+  if (!confirm('Testdata laden? Dit voegt een demo-zwembad en demo-gebruiker toe.')) return;
+  try {
+    const d = await call('load_demo_data', 'POST');
+    toast('Testdata geladen');
+    d.results.forEach(r => console.log(r));
+    loadAll();
+  } catch (e) { toast(e.message, true); }
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function today() {
+  return new Date().toISOString().split('T')[0];
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function badge(val, lo1, lo2, hi1, hi2, unit = '') {
+  if (val == null) return '—';
+  const n = parseFloat(val);
+  const cls = (n < lo2 || n > hi1) ? (n < lo1 || n > hi2 ? 'b-bad' : 'b-warn') : 'b-ok';
+  return `<span class="badge ${cls}">${n}${esc(unit)}</span>`;
+}
+
+function openModal(id)  { document.getElementById(id).style.display = 'flex'; }
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function copyText(elId) {
+  const text = document.getElementById(elId).textContent;
+  navigator.clipboard.writeText(text).then(() => toast('Gekopieerd!')).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta); toast('Gekopieerd!');
+  });
+}
+
+let toastTimer;
+function toast(msg, isErr = false) {
+  const el = document.getElementById('toast');
+  el.textContent  = msg;
+  el.style.background = isErr ? '#c0392b' : '#111';
+  el.classList.add('on');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('on'), isErr ? 5000 : 3000);
+}
+
+// ── Start ─────────────────────────────────────────────────────
 checkLogin();
 </script>
 </body>
