@@ -44,9 +44,13 @@ textarea{resize:vertical;min-height:70px;font-size:14px}
 .strip-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:.5rem}
 .strip-param{background:#fafaf8;border:1px solid var(--bd);border-radius:10px;padding:.75rem;text-align:center}
 .strip-param-label{font-size:11px;font-weight:700;color:var(--t2);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em}
-.pad-crop-wrap{display:none;margin-bottom:6px;text-align:center}
+.crop-row{display:flex;justify-content:center;gap:8px;margin-bottom:6px}
+.pad-crop-wrap{display:none;text-align:center}
 .pad-crop-wrap canvas{border-radius:5px;border:1.5px solid var(--bd);width:60px;height:42px;display:block;margin:0 auto 2px}
 .pad-crop-wrap span{font-size:9px;color:var(--t3);display:block}
+.ref-crop-wrap{display:none;text-align:center}
+.ref-crop-wrap canvas{border-radius:5px;border:1.5px solid var(--g);width:60px;height:42px;display:block;margin:0 auto 2px}
+.ref-crop-wrap span{font-size:9px;color:var(--t3);display:block}
 .strip-param-val{font-size:20px;font-weight:700;color:var(--gd);margin-bottom:5px;line-height:1}
 .ref-cells{display:flex;border-radius:5px;overflow:hidden;margin-bottom:5px;height:30px;border:1px solid var(--bd)}
 .ref-cell{flex:1;display:flex;align-items:flex-end;justify-content:center;padding-bottom:2px;border-right:1px solid rgba(255,255,255,.35)}
@@ -345,9 +349,9 @@ const PARAMS = [
     ]},
   { key:'chlorine',   label:'Chloor (ppm)',fid:'f-cl',   min:0,   max:10,  step:.5, dec:1, def:1.5,
     cells:[
-      {v:0,  c:'#FFFFFF',t:'#999'},{v:0.5,c:'#FFDEDE',t:'#333'},
-      {v:1,  c:'#FFAAAA',t:'#333'},{v:3,  c:'#FF7777',t:'#fff'},
-      {v:5,  c:'#EE4488',t:'#fff'},{v:10, c:'#BB0044',t:'#fff'}
+      {v:0,  c:'#FFFFFF',t:'#999'},{v:0.5,c:'#F0E8FF',t:'#333'},
+      {v:1,  c:'#D8B8F0',t:'#333'},{v:3,  c:'#A060CC',t:'#fff'},
+      {v:5,  c:'#7030A0',t:'#fff'},{v:10, c:'#3D0066',t:'#fff'}
     ]},
   { key:'alkalinity', label:'ALK. (ppm)',  fid:'f-alk',  min:0,   max:240, step:1,  dec:0, def:100,
     cells:[
@@ -373,9 +377,15 @@ function paramCard(p) {
   ).join('');
   return `<div class="strip-param">
     <div class="strip-param-label">${p.label}</div>
-    <div class="pad-crop-wrap" id="pw-${p.key}">
-      <canvas id="cp-${p.key}" width="60" height="42"></canvas>
-      <span>Jouw strip</span>
+    <div class="crop-row">
+      <div class="pad-crop-wrap" id="pw-${p.key}">
+        <canvas id="cp-${p.key}" width="60" height="42"></canvas>
+        <span>Jouw strip</span>
+      </div>
+      <div class="ref-crop-wrap" id="rw-${p.key}">
+        <canvas id="cr-${p.key}" width="60" height="42"></canvas>
+        <span>Kleurentabel</span>
+      </div>
     </div>
     <div class="strip-param-val" id="vv-${p.key}">${v.toFixed(p.dec)}</div>
     <div class="ref-cells">${cells}</div>
@@ -405,9 +415,6 @@ function applyAIToSliders(d) {
     // Redenering
     const rz = document.getElementById('rz-' + p.key);
     if (rz) rz.textContent = r.reasoning || '';
-    // Toon strip-pad crop
-    const pw = document.getElementById('pw-' + p.key);
-    if (pw) pw.style.display = 'block';
   });
   // Teken crops nadat AI_IMG geladen is
   PARAMS.forEach(p => doCrop(p.key));
@@ -457,8 +464,16 @@ function onSlider(key, dec, fid) {
 function doCrop(key) {
   if (!AI_IMG?.complete || !AI_RESULT) return;
   const r = AI_RESULT[key];
-  if (!r?.pad_bbox) return;
-  cropCanvas('cp-' + key, r.pad_bbox);
+  if (r?.pad_bbox) {
+    cropCanvas('cp-' + key, r.pad_bbox);
+    const pw = document.getElementById('pw-' + key);
+    if (pw) pw.style.display = 'block';
+  }
+  if (r?.ref_bbox) {
+    cropCanvas('cr-' + key, r.ref_bbox);
+    const rw = document.getElementById('rw-' + key);
+    if (rw) rw.style.display = 'block';
+  }
 }
 
 function cropCanvas(id, bbox) {

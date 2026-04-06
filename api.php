@@ -545,13 +545,20 @@ The strip is narrow (≈1–2 cm wide). Each pad occupies roughly 1/4 of the str
 For each pad, give its tight bounding box on the strip (do NOT include neighboring pads).
 
 ═══ STEP 4: MATCH COLORS TO REFERENCE CHART ═══
-The reference chart has separate columns/rows for each parameter:
-• pH        — shades of orange/tan: 6.2(yellow-orange) → 7.2-7.6(medium orange) → 8.4(reddish-tan)
-• Chlorine  — white(0) → barely-pink(0.5) → light-pink(1) → pink(3) → dark-pink/red(5-10 ppm)
-• Alkalinity— yellow(0) → light-olive(40-80) → medium-green(120) → dark-green(180-240 ppm)
-• Stabilizer— white/clear(0) → very-faint-lavender(30) → light-purple(100) → dark-purple(300 ppm)
+The reference chart on the bottle/package has labeled rows:
+  pH (END PAD) · ppm FREE CHLORINE · ppm TOTAL ALKALINITY · ppm STABILIZER (PAD NEAREST HANDLE)
+Each row contains color squares with numeric values printed on them.
 
-Find the color square in the chart that BEST matches the pad. Give a tight crop of THAT SINGLE SQUARE.
+For EACH pad:
+1. Observe the pad's actual color as it appears in THIS photo (do not assume any expected color)
+2. Locate the corresponding labeled row in the reference chart visible in THIS photo
+3. Find the color square in that row that best visually matches the pad color
+4. Use the numeric value printed on that square
+5. Return a tight bounding box of ONLY that single matching square as ref_bbox
+
+The reference chart in the photo is your ONLY color reference.
+Do NOT rely on any prior assumptions about what color a parameter should be.
+All parameters are flexible — trust what you visually observe.
 
 ═══ OUTPUT ═══
 Return ONLY valid JSON, no markdown, no explanatory text:
