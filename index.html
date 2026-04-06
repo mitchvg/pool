@@ -424,7 +424,7 @@ function cropRegion(imgSrc, xPct, yPct, wPct, hPct, outW, outH) {
 }
 
 // After AI result: create annotated photo + strip crop + individual pad crops
-async function extractAllCrops(imgSrc, positions, stripBox) {
+async function extractAllCrops(imgSrc, positions, stripBox, chartBox) {
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => {
@@ -481,6 +481,21 @@ async function extractAllCrops(imgSrc, positions, stripBox) {
           } catch(e) {}
         }
 
+        // Reference chart crop (the color grid on the Aquacheck bottle)
+        if (chartBox) {
+          try {
+            const cc = document.createElement('canvas');
+            const cx = Math.max(0, Math.round((chartBox.x1/100)*W));
+            const cy = Math.max(0, Math.round((chartBox.y1/100)*H));
+            const cw = Math.round(((chartBox.x2-chartBox.x1)/100)*W);
+            const ch = Math.round(((chartBox.y2-chartBox.y1)/100)*H);
+            const outScale = Math.min(2.5, 240/Math.max(cw,ch));
+            cc.width = Math.round(cw*outScale); cc.height = Math.round(ch*outScale);
+            cc.getContext('2d').drawImage(img, cx, cy, cw, ch, 0, 0, cc.width, cc.height);
+            crops.chart = cc.toDataURL('image/jpeg', 0.92);
+          } catch(e) {}
+        }
+
         S.padCrops = crops;
         if (S.step===1 && S.aiDone) render();
         resolve(crops);
@@ -530,24 +545,26 @@ function renderAIResult() {
       <span style="font-size:11px;color:var(--t2)">Vergelijk pads met referentievakjes</span>
     </div>
 
-    <!-- Annotated photo + strip crop side by side -->
-    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-start">
-      ${crops.annotated ? `
-        <div style="flex:2">
-          <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Foto met pad-locaties (gekleurde kaders)</div>
-          <img src="${crops.annotated}" style="width:100%;border-radius:6px;border:1px solid var(--bd)">
-        </div>` : `
-        <div style="flex:2">
-          <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Originele foto</div>
-          <img src="${S.stripSrc}" style="width:100%;border-radius:6px;border:1px solid var(--bd)">
-        </div>`}
-      ${crops.strip ? `
-        <div style="flex:1">
-          <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Strip vergroot</div>
-          <img src="${crops.strip}" style="width:100%;border-radius:6px;border:1px solid var(--bd);image-rendering:pixelated">
-        </div>` : ''}
+    <!-- Three-panel: annotated photo | strip crop | reference chart crop -->
+    <div style="display:flex;gap:6px;margin-bottom:12px;align-items:flex-start">
+
+      <div style="flex:3;min-width:0">
+        <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Foto (gekleurde kaders = pad locaties)</div>
+        <img src="${crops.annotated||S.stripSrc}" style="width:100%;border-radius:6px;border:1px solid var(--bd)">
+      </div>
+
+      ${crops.strip ? `<div style="flex:1;min-width:0">
+        <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Strip</div>
+        <img src="${crops.strip}" style="width:100%;border-radius:6px;border:1px solid var(--bd);image-rendering:pixelated">
+      </div>` : ''}
+
+      ${crops.chart ? `<div style="flex:2;min-width:0">
+        <div style="font-size:10px;color:var(--t3);margin-bottom:3px">Kleurentabel (uit foto)</div>
+        <img src="${crops.chart}" style="width:100%;border-radius:6px;border:1px solid var(--bd)">
+      </div>` : ''}
+
     </div>
-    <p style="font-size:11px;color:var(--t2);margin-bottom:10px">Vergelijk de pad-kleur in de foto met de referentievakjes hieronder. De dikste rand = AI-selectie.</p>
+    <p style="font-size:11px;color:var(--t2);margin-bottom:10px">Vergelijk de pad-kleur (strip) met de referentievakjes hieronder. Dikste rand = AI-keuze. Slider om bij te stellen.</p>
 
     ${params.map(p => {
       if (p.val === null) return '';
@@ -657,24 +674,44 @@ async function handlePhoto(e){
 }
 
 async function analyzeStrip(b64,mt){
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25000); // 25s timeout
   try{
-    const resp=await fetch(`${API}?action=ai_strip`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:b64,type:mt})});
-    const data=await resp.json();
+    const resp = await fetch(`${API}?action=ai_strip`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image:b64,type:mt}),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if(!resp.ok){ throw new Error(`HTTP ${resp.status}`); }
+    const data = await resp.json();
     if(data.ph!==undefined){
       S.ph=+data.ph; S.cl=+data.cl; S.alk=+data.alk; S.stab=data.stab||null;
       S.aiReasoning=data.reasoning||null;
       S.aiPadColors=data.pad_colors||null;
       S.aiPadPositions=data.pad_positions||null;
-      S.padCrops=null; // will be extracted by canvas
+      S.padCrops=null;
       S.aiOriginal={ph:+data.ph,cl:+data.cl,alk:+data.alk,stab:data.stab||null};
       S.aiDone=true;
-      // Extract strip + pad crops from photo using canvas
-      if(S.stripSrc && data.pad_positions) extractAllCrops(S.stripSrc, data.pad_positions, data.strip_bbox||null);
+      // Extract crops: use strip_bbox to divide into 4 equal sections
+      const bbox = data.strip_bbox || null;
+      extractAllCrops(S.stripSrc, data.pad_positions||{}, bbox);
     } else {
-      toast((data.error||'AI kon strip niet lezen')+'  — vul handmatig in', 5000);
+      const errMsg = data.error || 'AI kon strip niet lezen';
+      toast(errMsg + ' — vul handmatig in', 6000);
+      S.aiDone=true; // show manual entry anyway
     }
-  }catch(e){toast('AI analyse overgeslagen');}
-  S.aiLoading=false;render();
+  } catch(e) {
+    clearTimeout(timeout);
+    if(e.name==='AbortError'){
+      toast('AI analyse duurde te lang (>25s) — vul handmatig in. Controleer API key in admin panel.', 6000);
+    } else {
+      toast('AI fout: '+e.message+' — vul handmatig in', 5000);
+    }
+    S.aiDone=true;
+  }
+  S.aiLoading=false; render();
 }
 
 function resetPhoto(){S.stripSrc=null;S.stripUrl=null;S.ph=null;S.cl=null;S.alk=null;S.stab=null;S.aiDone=false;render();}

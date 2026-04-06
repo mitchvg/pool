@@ -36,17 +36,10 @@ function getApiKey(): string {
     return $fromConst;
 }
 
-// Versie: probeer git, anders file mtime, anders datum van vandaag
+// Versie = wijzigingsdatum van api.php zelf
+// Verandert automatisch bij elke nieuwe deployment
 function getFileVersion(): string {
-    $dir = __DIR__;
-    // Probeer git log (werkt alleen als git beschikbaar is in shell)
-    $git = @shell_exec("cd {$dir} && git log -1 --format='%ci' 2>/dev/null");
-    if ($git && strlen(trim($git)) > 10) return substr(trim($git), 0, 16);
-    // Fallback: mtime van deploy.php
-    $deployFile = __DIR__.'/deploy.php';
-    if (file_exists($deployFile)) return date('Y-m-d H:i', filemtime($deployFile));
-    // Laatste fallback
-    return date('Y-m-d');
+    return date('Y-m-d H:i', filemtime(__FILE__));
 }
 
 // Haal waarde op uit app_meta tabel (met fallback)
@@ -57,6 +50,108 @@ function getMeta(string $key, string $fallback = ''): string {
         $r = $st->fetchColumn();
         return $r !== false ? $r : $fallback;
     } catch(Throwable $e) { return $fallback; }
+}
+
+// Sla waarde op in app_meta
+function setMeta(string $key, string $value): void {
+    try {
+        db()->prepare("INSERT INTO app_meta (key_name,value) VALUES (?,?) ON DUPLICATE KEY UPDATE value=?,updated_at=NOW()")
+            ->execute([$key,$value,$value]);
+    } catch(Throwable $e) {}
+}
+
+// Auto-migratie: draait bij elke admin login als versie verschilt
+// CREATE TABLE IF NOT EXISTS is volledig veilig om te herhalen
+function runAutoMigrate(): array {
+    $fileV = getFileVersion();
+    $dbV   = getMeta('db_version');
+    $log   = [];
+
+    if ($fileV === $dbV) {
+        return ['ran' => false, 'version' => $fileV, 'message' => 'Geen migratie nodig'];
+    }
+
+    $sql = <<<'SQLEOF'
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL,
+  email VARCHAR(100) NOT NULL, phone VARCHAR(30) DEFAULT '',
+  magic_token VARCHAR(32) UNIQUE NOT NULL, roles VARCHAR(50) DEFAULT 'monteur',
+  active TINYINT(1) DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS woningen (
+  id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL,
+  owner_name VARCHAR(100) DEFAULT '', email VARCHAR(100) DEFAULT '',
+  phone VARCHAR(30) DEFAULT '', address VARCHAR(200) DEFAULT '',
+  pool_type VARCHAR(50) DEFAULT 'Privé buitenbad', volume_liters INT DEFAULT 40000,
+  notes TEXT, qr_token VARCHAR(32) UNIQUE NOT NULL,
+  history_token VARCHAR(32) UNIQUE NOT NULL, pool_code VARCHAR(8) UNIQUE NOT NULL,
+  active TINYINT(1) DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS user_woningen (
+  user_id INT NOT NULL, woning_id INT NOT NULL, PRIMARY KEY (user_id,woning_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (woning_id) REFERENCES woningen(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS visits (
+  id INT AUTO_INCREMENT PRIMARY KEY, woning_id INT NOT NULL, user_id INT,
+  visit_date DATE NOT NULL, visit_time TIME NOT NULL,
+  ph DECIMAL(4,2), chlorine DECIMAL(5,2), alkalinity INT, stabilizer DECIMAL(5,1),
+  volume_used INT, notes TEXT, advice_json TEXT,
+  strip_photo VARCHAR(255) DEFAULT '', confirm_photo_chemicals VARCHAR(255) DEFAULT '',
+  confirm_photo_pool VARCHAR(255) DEFAULT '', email_sent TINYINT(1) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (woning_id) REFERENCES woningen(id), FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS ai_corrections (
+  id INT AUTO_INCREMENT PRIMARY KEY, visit_id INT, photo_url VARCHAR(255),
+  ai_ph DECIMAL(4,2), ai_cl DECIMAL(5,2), ai_alk INT, ai_stab DECIMAL(5,1),
+  human_ph DECIMAL(4,2), human_cl DECIMAL(5,2), human_alk INT, human_stab DECIMAL(5,1),
+  ai_reasoning TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS app_meta (
+  key_name VARCHAR(50) PRIMARY KEY, value VARCHAR(200) NOT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+INSERT IGNORE INTO users (name,email,phone,magic_token,roles) VALUES
+  ('Tycho Hombergen','tycho.hombergen@villaparkfontein.com','',MD5('tycho_v4_2024'),'monteur'),
+  ('Manager','pool@villaparkfontein.com','',MD5('manager_v4_2024'),'monteur,admin');
+INSERT IGNORE INTO woningen (name,owner_name,email,address,pool_type,volume_liters,qr_token,history_token,pool_code) VALUES
+  ('Villa Janssen','Peter Janssen','mitchvg@gmail.com','Koningslaan 12, Amsterdam','Privé buitenbad',40000,MD5('jan_qr_v4'),MD5('jan_hist_v4'),LEFT(MD5('jan_code_v4'),6)),
+  ('Hotel Metropol','Receptie','mitchvg@gmail.com','Stationsplein 3, Utrecht','Hotel binnenbad',120000,MD5('met_qr_v4'),MD5('met_hist_v4'),LEFT(MD5('met_code_v4'),6)),
+  ('Villa De Vries','Sandra de Vries','mitchvg@gmail.com','Parkweg 7, Haarlem','Privé spa',25000,MD5('dev_qr_v4'),MD5('dev_hist_v4'),LEFT(MD5('dev_code_v4'),6));
+SQLEOF;
+
+    $stmts = preg_split('/;\s*[
+]+/', $sql, -1, PREG_SPLIT_NO_EMPTY);
+    $ok = 0; $skip = 0;
+    foreach (array_filter(array_map('trim', $stmts)) as $stmt) {
+        if (!$stmt || str_starts_with(ltrim($stmt), '--')) continue;
+        try {
+            db()->exec($stmt); $ok++;
+        } catch (PDOException $e) {
+            $msg = $e->getMessage();
+            if (str_contains($msg, 'already exists') || str_contains($msg, 'Duplicate')) { $skip++; }
+            else { $log[] = 'SQL: ' . $msg; }
+        }
+    }
+
+    // Sla API key op als die in code staat maar nog niet in DB
+    if (!getMeta('claude_api_key')) {
+        $k = CLAUDE_API_KEY;
+        if (strlen($k) > 10) setMeta('claude_api_key', $k);
+    }
+
+    setMeta('db_version',  $fileV);
+    setMeta('last_deploy', date('d-m-Y H:i:s'));
+
+    return [
+        'ran'     => true,
+        'version' => $fileV,
+        'ok'      => $ok,
+        'skip'    => $skip,
+        'errors'  => $log,
+        'message' => "Migratie uitgevoerd: {$ok} statements, {$skip} overgeslagen",
+    ];
 }
 
 session_start();
@@ -78,6 +173,98 @@ function input():array { $r=file_get_contents('php://input'); return json_decode
 function reqAdmin():void { if(empty($_SESSION['admin'])) respond(['error'=>'Niet ingelogd'],401); }
 function hasRole(array $user,string $role):bool { return in_array($role,explode(',',$user['roles'])); }
 
+// ── AUTO-MIGRATE ──────────────────────────────────────────────
+// Detecteert bestandswijziging en draait SQL-migraties automatisch.
+// Geen Plesk-actie nodig — werkt bij elke GitHub push + Plesk pull.
+function autoMigrate(): void {
+    $currentVer = date('YmdHi', filemtime(__FILE__)); // verandert bij elke upload
+
+    // Schema SQL — alle statements zijn idempotent (IF NOT EXISTS / INSERT IGNORE)
+    static $SCHEMA = "
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL,
+  email VARCHAR(100) NOT NULL, phone VARCHAR(30) DEFAULT '',
+  magic_token VARCHAR(32) UNIQUE NOT NULL, roles VARCHAR(50) DEFAULT 'monteur',
+  active TINYINT(1) DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS woningen (
+  id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100) NOT NULL,
+  owner_name VARCHAR(100) DEFAULT '', email VARCHAR(100) DEFAULT '',
+  phone VARCHAR(30) DEFAULT '', address VARCHAR(200) DEFAULT '',
+  pool_type VARCHAR(50) DEFAULT 'Privé buitenbad', volume_liters INT DEFAULT 40000,
+  notes TEXT, qr_token VARCHAR(32) UNIQUE NOT NULL,
+  history_token VARCHAR(32) UNIQUE NOT NULL, pool_code VARCHAR(8) UNIQUE NOT NULL,
+  active TINYINT(1) DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS user_woningen (
+  user_id INT NOT NULL, woning_id INT NOT NULL, PRIMARY KEY (user_id, woning_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (woning_id) REFERENCES woningen(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS visits (
+  id INT AUTO_INCREMENT PRIMARY KEY, woning_id INT NOT NULL, user_id INT,
+  visit_date DATE NOT NULL, visit_time TIME NOT NULL,
+  ph DECIMAL(4,2), chlorine DECIMAL(5,2), alkalinity INT, stabilizer DECIMAL(5,1),
+  volume_used INT, notes TEXT, advice_json TEXT,
+  strip_photo VARCHAR(255) DEFAULT '', confirm_photo_chemicals VARCHAR(255) DEFAULT '',
+  confirm_photo_pool VARCHAR(255) DEFAULT '', email_sent TINYINT(1) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (woning_id) REFERENCES woningen(id), FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE TABLE IF NOT EXISTS ai_corrections (
+  id INT AUTO_INCREMENT PRIMARY KEY, visit_id INT, photo_url VARCHAR(255),
+  ai_ph DECIMAL(4,2), ai_cl DECIMAL(5,2), ai_alk INT, ai_stab DECIMAL(5,1),
+  human_ph DECIMAL(4,2), human_cl DECIMAL(5,2), human_alk INT, human_stab DECIMAL(5,1),
+  ai_reasoning TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS app_meta (
+  key_name VARCHAR(50) PRIMARY KEY, value VARCHAR(500) NOT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+INSERT IGNORE INTO users (name,email,phone,magic_token,roles) VALUES
+  ('Tycho Hombergen','tycho.hombergen@villaparkfontein.com','',MD5('tycho_v4_2024'),'monteur'),
+  ('Manager','pool@villaparkfontein.com','',MD5('manager_v4_2024'),'monteur,admin');
+INSERT IGNORE INTO woningen (name,owner_name,email,address,pool_type,volume_liters,qr_token,history_token,pool_code) VALUES
+  ('Villa Janssen','Peter Janssen','mitchvg@gmail.com','Koningslaan 12, Amsterdam','Privé buitenbad',40000,MD5('jan_qr_v4'),MD5('jan_hist_v4'),LEFT(MD5('jan_code_v4'),6)),
+  ('Hotel Metropol','Receptie','mitchvg@gmail.com','Stationsplein 3, Utrecht','Hotel binnenbad',120000,MD5('met_qr_v4'),MD5('met_hist_v4'),LEFT(MD5('met_code_v4'),6)),
+  ('Villa De Vries','Sandra de Vries','mitchvg@gmail.com','Parkweg 7, Haarlem','Privé spa',25000,MD5('dev_qr_v4'),MD5('dev_hist_v4'),LEFT(MD5('dev_code_v4'),6));
+";
+    try {
+        $pdo = db();
+        // Check if migration needed
+        try {
+            $dbVer = $pdo->query("SELECT value FROM app_meta WHERE key_name='db_version'")->fetchColumn();
+            if ($dbVer === $currentVer) return; // Already up to date
+        } catch (Throwable $e) {
+            // app_meta doesn't exist yet — run everything
+        }
+        // Run all statements
+        foreach (preg_split('/;\s*\n/', $SCHEMA, -1, PREG_SPLIT_NO_EMPTY) as $stmt) {
+            $stmt = trim($stmt);
+            if (!$stmt || str_starts_with(ltrim($stmt), '--')) continue;
+            try { $pdo->exec($stmt); } catch (PDOException $e) {
+                if (!str_contains($e->getMessage(),'already exists') && !str_contains($e->getMessage(),'Duplicate'))
+                    error_log("PoolCheck migrate: ".$e->getMessage());
+            }
+        }
+        // Save version + API key
+        $ins = "INSERT INTO app_meta (key_name,value) VALUES (?,?) ON DUPLICATE KEY UPDATE value=?,updated_at=NOW()";
+        $pdo->prepare($ins)->execute(['db_version', $currentVer, $currentVer]);
+        $pdo->prepare($ins)->execute(['last_deploy', date('d-m-Y H:i:s'), date('d-m-Y H:i:s')]);
+        // Store API key if defined and not yet in DB
+        $apiKey = CLAUDE_API_KEY;
+        if (strlen($apiKey) > 10) {
+            $existing = $pdo->query("SELECT value FROM app_meta WHERE key_name='claude_api_key'")->fetchColumn();
+            if (!$existing || $existing !== $apiKey) {
+                $pdo->prepare($ins)->execute(['claude_api_key', $apiKey, $apiKey]);
+            }
+        }
+    } catch (Throwable $e) {
+        error_log("PoolCheck autoMigrate error: ".$e->getMessage());
+    }
+}
+autoMigrate(); // Draait bij elke request, maar doet alleen iets als versie veranderd is
+
 $action = $_GET['action'] ?? input()['action'] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
 try {
@@ -90,6 +277,7 @@ try {
         $action==='upload_photo'   &&$method==='POST' => uploadPhoto(),
         $action==='woning_history' &&$method==='GET'  => woningHistory(),
         $action==='ai_strip'       &&$method==='POST' => aiStrip(),
+        $action==='app_status'     &&$method==='GET'  => appStatus(),
 
         $action==='admin_login'    &&$method==='POST' => adminLogin(),
         $action==='admin_logout'   &&$method==='POST' => adminLogout(),
@@ -267,9 +455,11 @@ STEP 4 — Output ONLY this JSON (no other text, no markdown):
   "pad_colors": {"ph": "#E8952A", "cl": "#F8F0F0", "alk": "#5A7A42", "stab": "#8B1A4A"},
   "pad_positions": {"ph": {"x": 50, "y": 18}, "cl": {"x": 50, "y": 35}, "alk": {"x": 50, "y": 52}, "stab": {"x": 50, "y": 70}},
   "strip_bbox": {"x1": 46, "y1": 60, "x2": 56, "y2": 95},
+  "chart_bbox": {"x1": 12, "y1": 20, "x2": 48, "y2": 62},
   "reasoning": {"ph": "medium orange ~7.4", "cl": "colorless ~0 ppm", "alk": "dark green ~120", "stab": "dark maroon ~120-150"}
 }
 
+IMPORTANT for chart_bbox: give the bounding box (as % of full image) of the ENTIRE color reference chart printed on the Aquacheck bottle/container. This is the rectangular grid with the colored squares and numbers like 6.2, 6.8, 7.2 etc.
 IMPORTANT for pad_positions: x and y are percentages (0-100) of the FULL IMAGE dimensions indicating the CENTER of each test pad on the narrow white plastic strip. Estimate carefully — this is used to crop the actual pad from the photo.
 For pad_colors: the actual dominant hex color you see on each pad (what the strip shows after dipping), NOT from the reference chart.
 PROMPT;
@@ -529,20 +719,25 @@ function linkUserWoning():void {
 // ============================================================
 // APP STATUS (versie check voor admin)
 // ============================================================
+function doAutoMigrate():void {
+    requireAdmin();
+    respond(runAutoMigrate());
+}
+
 function appStatus():void {
     requireAdmin();
     $fileVersion = getFileVersion();
-    $tableExists = false;
-    $dbVersion = null; $lastDeploy = null;
-    try {
-        $check = db()->query("SHOW TABLES LIKE 'app_meta'");
-        $tableExists = $check->rowCount() > 0;
-        if ($tableExists) {
-            $st = db()->query("SELECT key_name,value FROM app_meta WHERE key_name IN ('db_version','last_deploy')");
-            foreach($st->fetchAll() as $r) {
-                if($r['key_name']==='db_version') $dbVersion=$r['value'];
-                if($r['key_name']==='last_deploy') $lastDeploy=$r['value'];
-            }
+    $dbVersion   = getMeta('db_version');
+    $lastDeploy  = getMeta('last_deploy');
+    $apiKey      = getApiKey();
+    respond([
+        'file_version' => $fileVersion,
+        'db_version'   => $dbVersion ?: 'Nog niet gemigreerd',
+        'last_deploy'  => $lastDeploy ?: null,
+        'match'        => $dbVersion === $fileVersion,
+        'api_key_set'  => strlen($apiKey) > 10,
+    ]);
+}
         }
     } catch(Throwable $e) {}
     respond([

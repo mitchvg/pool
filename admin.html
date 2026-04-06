@@ -148,6 +148,11 @@ async function checkLogin() {
 async function showApp() {
   document.getElementById('lp').style.display = 'none';
   document.getElementById('ap').style.display = 'flex';
+  // Auto-migratie: draait als versie verschilt (veilig, idempotent)
+  try {
+    const m = await call('auto_migrate', 'POST');
+    if (m.ran) console.log('Auto-migratie:', m.message);
+  } catch(e) { console.warn('Migratie check:', e.message); }
   await reload();
 }
 
@@ -189,24 +194,19 @@ function drawDash() {
   // Load version info
   call('app_status').then(s => {
     const match = s.match;
-    const apiOk = s.api_key_set;
-    let lines = [];
-    if (match) lines.push(`<span style="background:#eaf3de;color:#2d6a4f;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">✓ v${s.file_version} — up to date</span>`);
-    else lines.push(`<span style="background:#fcebeb;color:#8b1c1c;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">⚠ Bestanden: ${s.file_version} | DB: ${s.db_version}</span>`);
-    if (s.last_deploy) lines.push(`<span style="font-size:12px;color:var(--t3)">Deploy: ${s.last_deploy}</span>`);
-    else lines.push(`<span style="font-size:12px;color:#c07000">⚠ deploy.php nog niet uitgevoerd via Plesk</span>`);
-    if (!s.table_exists) lines.push(`<span style="font-size:12px;color:#c07000">⚠ app_meta tabel ontbreekt — run deploy.php</span>`);
-    lines.push(`<span style="font-size:12px;color:var(--t3)">${apiOk?'🔑 API key OK':'⚠ API key niet ingesteld'}</span>`);
     const vDiv = document.createElement('div');
-    vDiv.style.cssText = 'margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;background:var(--bg);border-radius:8px';
-    vDiv.innerHTML = lines.join('');
+    vDiv.style.cssText = 'margin-bottom:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 14px;background:var(--bg);border-radius:8px;font-size:12px';
+    const parts = [];
+    if (match) {
+      parts.push(`<span style="background:#eaf3de;color:#2d6a4f;padding:3px 10px;border-radius:20px;font-weight:600">✓ v${s.file_version}</span>`);
+    } else {
+      parts.push(`<span style="background:#faeeda;color:#7a4f00;padding:3px 10px;border-radius:20px;font-weight:600">⟳ Bestanden: ${s.file_version} | DB: ${s.db_version} — auto-migratie draait bij volgende login</span>`);
+    }
+    if (s.last_deploy) parts.push(`<span style="color:var(--t3)">Bijgewerkt: ${s.last_deploy}</span>`);
+    parts.push(`<span style="color:var(--t3)">${s.api_key_set ? '🔑 AI OK' : '⚠ API key ontbreekt in api.php'}</span>`);
+    vDiv.innerHTML = parts.join('');
     document.getElementById('pg-dashboard').insertAdjacentElement('afterbegin', vDiv);
-  }).catch(e => {
-    const vDiv = document.createElement('div');
-    vDiv.style.cssText = 'margin-bottom:14px;padding:10px 14px;background:#faeeda;border-radius:8px;font-size:12px;color:#7a4f00';
-    vDiv.textContent = '⚠ Status ophalen mislukt — controleer of je ingelogd bent als admin: ' + e.message;
-    document.getElementById('pg-dashboard').insertAdjacentElement('afterbegin', vDiv);
-  });
+  }).catch(() => {});
 }
 
 // ─── WONINGEN ──────────────────────────────────────
