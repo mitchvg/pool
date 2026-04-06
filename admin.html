@@ -57,6 +57,7 @@ tr:hover td{background:#fafaf8}
 .btn-sm{padding:4px 10px;font-size:12px}
 .btn-out{background:transparent;border:1.5px solid var(--bd);color:var(--t2)}
 .btn-red{background:var(--red)}
+.btn-danger{background:#e24b4a;color:#fff}
 .btn-ghost{background:var(--gl);color:var(--gd);border:none}
 /* Forms */
 .fg{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
@@ -269,9 +270,12 @@ label{font-size:12px;font-weight:600;color:var(--t2)}
         <button class="btn btn-ghost btn-sm" onclick="sendLink()">Mail</button>
       </div>
     </div>
-    <div class="mbtns">
-      <button class="btn btn-out" onclick="closeModal('m-user')">Annuleren</button>
-      <button class="btn" onclick="saveUser()">Opslaan</button>
+    <div class="mbtns" style="justify-content:space-between">
+      <button class="btn btn-danger" id="mu-delete-btn" style="display:none" onclick="deleteCurrentUser()">Verwijderen</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-out" onclick="closeModal('m-user')">Annuleren</button>
+        <button class="btn" onclick="saveUser()">Opslaan</button>
+      </div>
     </div>
   </div>
 </div>
@@ -503,6 +507,7 @@ function openAddUser() {
   document.getElementById('mu-role-user').checked  = true;
   document.getElementById('mu-role-admin').checked = false;
   document.getElementById('mu-link-section').style.display = 'none';
+  document.getElementById('mu-delete-btn').style.display = 'none';
   drawZwembadCheckboxes([]);
   openModal('m-user');
 }
@@ -525,6 +530,7 @@ function openEditUser(id) {
     document.getElementById('mu-magic-link').textContent = u.magic_link;
     document.getElementById('mu-link-section').style.display = 'block';
   }
+  document.getElementById('mu-delete-btn').style.display = 'inline-flex';
   openModal('m-user');
 }
 
@@ -593,6 +599,20 @@ async function sendLink() {
   try {
     const d = await call('send_magic_link', 'POST', { user_id: parseInt(id) });
     toast(d.success ? 'Magic link verstuurd per e-mail' : 'Versturen mislukt — controleer SMTP instellingen', !d.success);
+  } catch (e) { toast(e.message, true); }
+}
+
+async function deleteCurrentUser() {
+  const id = document.getElementById('mu-id').value || currentUserId;
+  if (!id) return;
+  const u = U.find(x => x.id == id);
+  if (!confirm(`Gebruiker "${u?.name || 'onbekend'}" definitief verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+  try {
+    await call('delete_user', 'POST', { id: parseInt(id) });
+    closeModal('m-user');
+    toast('Gebruiker verwijderd');
+    loadUsers();
+    loadDashboard();
   } catch (e) { toast(e.message, true); }
 }
 

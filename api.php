@@ -221,6 +221,42 @@ function autoMigrate(): void {
             error_log("PoolCheck migrate: kolom 'code' toegevoegd aan zwembaden");
         }
 
+        // ── Visits kolom-migraties ────────────────────────────────────────────
+        $visitCols = db()->prepare($getColsSql);
+        $visitCols->execute([$dbName, 'visits']);
+        $visitCols = $visitCols->fetchAll(PDO::FETCH_COLUMN);
+
+        $visitAlters = [
+            'zwembad_id'              => "ALTER TABLE visits ADD COLUMN zwembad_id INT DEFAULT NULL",
+            'user_id'                 => "ALTER TABLE visits ADD COLUMN user_id INT DEFAULT NULL",
+            'stabilizer'              => "ALTER TABLE visits ADD COLUMN stabilizer DECIMAL(5,1) DEFAULT NULL",
+            'volume_used'             => "ALTER TABLE visits ADD COLUMN volume_used INT DEFAULT NULL",
+            'notes'                   => "ALTER TABLE visits ADD COLUMN notes TEXT",
+            'advice_json'             => "ALTER TABLE visits ADD COLUMN advice_json TEXT",
+            'strip_photo'             => "ALTER TABLE visits ADD COLUMN strip_photo VARCHAR(64) DEFAULT ''",
+            'confirm_photo_chemicals' => "ALTER TABLE visits ADD COLUMN confirm_photo_chemicals VARCHAR(64) DEFAULT ''",
+            'confirm_photo_pool'      => "ALTER TABLE visits ADD COLUMN confirm_photo_pool VARCHAR(64) DEFAULT ''",
+            'email_sent'              => "ALTER TABLE visits ADD COLUMN email_sent TINYINT(1) DEFAULT 0",
+        ];
+        foreach ($visitAlters as $col => $sql) {
+            if (!in_array($col, $visitCols)) {
+                db()->exec($sql);
+                error_log("PoolCheck migrate: kolom '$col' toegevoegd aan visits");
+            }
+        }
+
+        // ── Auto-assign codes aan bestaande records zonder code ───────────────
+        $usersNoCodes = db()->query("SELECT id FROM users WHERE code IS NULL ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($usersNoCodes as $uid) {
+            $c = nextCode('U', 'users', 'code');
+            db()->prepare("UPDATE users SET code = ? WHERE id = ?")->execute([$c, $uid]);
+        }
+        $poolsNoCodes = db()->query("SELECT id FROM zwembaden WHERE code IS NULL ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
+        foreach ($poolsNoCodes as $pid) {
+            $c = nextCode('P', 'zwembaden', 'code');
+            db()->prepare("UPDATE zwembaden SET code = ? WHERE id = ?")->execute([$c, $pid]);
+        }
+
         // Sla nieuwe versie op
         $ins = "INSERT INTO app_meta (key_name, value) VALUES (?, ?)
                 ON DUPLICATE KEY UPDATE value = ?, updated_at = NOW()";
@@ -263,6 +299,7 @@ try {
         $action === 'update_zwembad'  && $method === 'POST' => updateZwembad(),
         $action === 'add_user'        && $method === 'POST' => addUser(),
         $action === 'update_user'     && $method === 'POST' => updateUser(),
+        $action === 'delete_user'     && $method === 'POST' => deleteUser(),
         $action === 'link_user_zwembad' && $method === 'POST' => linkUserZwembad(),
         $action === 'unlink_user_zwembad' && $method === 'POST' => unlinkUserZwembad(),
         $action === 'send_magic_link' && $method === 'POST' => sendMagicLink(),
@@ -464,43 +501,43 @@ function aiStrip(): void {
     if (!$b64) respond(['error' => 'Geen afbeelding'], 400);
 
     $prompt = <<<'PROMPT'
-You are analyzing a pool water test strip photo. The image shows TWO objects side by side:
-1. A narrow white plastic TEST STRIP (~5cm long) with 4 colored reaction pads
-2. A COLOR REFERENCE CHART on the bottle/container with printed color squares and numbers
+You are reading a pool water test strip. The photo contains:
+1. A narrow plastic TEST STRIP with exactly 4 small square colored reaction pads
+2. A COLOR REFERENCE CHART (printed grid on the bottle/package) with labeled color squares
 
-YOUR TASK: Identify and locate BOTH objects precisely, then read each pad value.
+═══ STEP 1: LOCATE THE STRIP ═══
+Find the thin white plastic strip. It has 4 colored pads in a row and a handle (blank white end with no pad).
 
-STEP 1 — FIND EACH OBJECT:
-- Test strip: narrow white plastic stick, separate from the bottle
-- Color chart: rectangular grid of colored squares with numbers (like 6.2, 6.8, 7.2...)
+═══ STEP 2: PAD ORDER ═══
+The handle end has no color pad — just white plastic.
+• Handle at BOTTOM → pads top-to-bottom: pH · Chlorine · Alkalinity · Stabilizer
+• Handle at TOP    → pads top-to-bottom: Stabilizer · Alkalinity · Chlorine · pH
+(The stabilizer pad is always adjacent to the handle.)
 
-STEP 2 — DETERMINE STRIP ORIENTATION:
-The Stabilizer pad ALWAYS has extra white plastic extending beyond it (the handle).
-- White extension at BOTTOM → order top-to-bottom: pH, Chlorine, Alkalinity, Stabilizer
-- White extension at TOP → order top-to-bottom: Stabilizer, Alkalinity, Chlorine, pH
+═══ STEP 3: LOCATE EACH PAD PRECISELY ═══
+The strip is narrow (≈1–2 cm wide). Each pad occupies roughly 1/4 of the strip length.
+For each pad, give its tight bounding box on the strip (do NOT include neighboring pads).
 
-STEP 3 — FOR EACH PAD, provide:
-a) pad_bbox: bounding box of that specific pad on the TEST STRIP (% of full image: x1,y1,x2,y2)
-b) ref_bbox: bounding box of the BEST MATCHING color square on the REFERENCE CHART (% of full image)
-c) value: your estimated numeric value
+═══ STEP 4: MATCH COLORS TO REFERENCE CHART ═══
+The reference chart has separate columns/rows for each parameter:
+• pH        — shades of orange/tan: 6.2(yellow-orange) → 7.2-7.6(medium orange) → 8.4(reddish-tan)
+• Chlorine  — white(0) → barely-pink(0.5) → light-pink(1) → pink(3) → dark-pink/red(5-10 ppm)
+• Alkalinity— yellow(0) → light-olive(40-80) → medium-green(120) → dark-green(180-240 ppm)
+• Stabilizer— white/clear(0) → very-faint-lavender(30) → light-purple(100) → dark-purple(300 ppm)
 
-Parameters:
-- pH: orange/tan spectrum. Range 6.2–8.4. Normal: 7.2–7.6
-- Chlorine: white-to-purple. Range 0–10 ppm. Normal: 1–3 ppm
-- Alkalinity: yellow-to-dark-green. Range 0–180 ppm. Normal: 80–120 ppm
-- Stabilizer: white-to-dark-purple. Range 0–300 ppm. Normal: 30–50 ppm
+Find the color square in the chart that BEST matches the pad. Give a tight crop of THAT SINGLE SQUARE.
 
-Output ONLY this JSON (no markdown, no other text):
+═══ OUTPUT ═══
+Return ONLY valid JSON, no markdown, no explanatory text:
 {
-  "ph":         { "value": 7.4, "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "medium orange matches 7.4 column" },
-  "chlorine":   { "value": 1.5, "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "light pink ~1.5 ppm" },
-  "alkalinity": { "value": 100, "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "medium green ~100 ppm" },
-  "stabilizer": { "value": 40,  "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "faint mauve ~40 ppm" }
+  "ph":         { "value": 7.4, "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "medium orange-tan matches 7.4" },
+  "chlorine":   { "value": 1.0, "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "very light pink ≈ 1 ppm" },
+  "alkalinity": { "value": 80,  "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "olive-green matches 80 ppm" },
+  "stabilizer": { "value": 40,  "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "faint lavender ≈ 40 ppm" }
 }
-
-All bbox values are percentages (0–100) of the FULL IMAGE dimensions.
-IMPORTANT: pad_bbox must tightly crop the actual colored pad on the strip.
-IMPORTANT: ref_bbox must crop the specific matching color square on the reference chart.
+All bbox values are % of the FULL image (0–100). x1<x2, y1<y2.
+Each pad_bbox must cover ONLY that one pad, not the whole strip.
+Each ref_bbox must cover ONLY the single matching color cell in the chart.
 PROMPT;
 
     $payload = json_encode([
@@ -907,6 +944,18 @@ function updateUser(): void {
         db()->prepare("UPDATE users SET name=?, email=?, phone=?, roles=?, active=? WHERE id=?")
             ->execute([$d['name'] ?? '', $d['email'] ?? '', $d['phone'] ?? '', $d['roles'] ?? 'user', (int)($d['active'] ?? 1), (int)$d['id']]);
     }
+    respond(['success' => true]);
+}
+
+function deleteUser(): void {
+    reqAdmin();
+    $d  = input();
+    $id = (int)($d['id'] ?? 0);
+    if (!$id) respond(['error' => 'ID vereist'], 400);
+
+    // Verwijder koppelingen eerst (FK-constraint)
+    db()->prepare("DELETE FROM user_zwembaden WHERE user_id = ?")->execute([$id]);
+    db()->prepare("DELETE FROM users WHERE id = ?")->execute([$id]);
     respond(['success' => true]);
 }
 
