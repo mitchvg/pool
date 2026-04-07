@@ -1287,6 +1287,91 @@ function applyHomography(srcCanvas, dstCtx, dstW, dstH, H) {
   dstCtx.putImageData(dstData, 0, 0);
 }
 
+// ── Wit-masker: pixels met hoge helderheid én lage saturatie ──
+// → het flesje-etiket is wit; strip-body ook maar langwerpig
+function buildWhiteMask(imgData, w, h) {
+  const d = imgData.data;
+  const mask = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const r = d[i*4], g = d[i*4+1], b = d[i*4+2];
+    const brightness = (r + g + b) / 3;
+    const mx = Math.max(r, g, b);
+    const mn = Math.min(r, g, b);
+    const sat = mx > 0 ? (mx - mn) / mx : 0;
+    mask[i] = (brightness > 185 && sat < 0.20) ? 1 : 0;
+  }
+  return mask;
+}
+
+// ── Witte blobs bouwen (vereenvoudigd, minArea als fractie) ───
+function buildWhiteBlobs(labels, w, h, count, minAreaFrac = 0.008) {
+  const totalPixels = w * h;
+  const minArea = totalPixels * minAreaFrac;
+  const compCount = new Int32Array(count);
+  const compBBox  = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const L = labels[y*w+x];
+      if (L < 0) continue;
+      compCount[L]++;
+      if (!compBBox[L]) compBBox[L] = {x1:x,y1:y,x2:x,y2:y};
+      else {
+        const bb = compBBox[L];
+        if (x < bb.x1) bb.x1=x; if (x > bb.x2) bb.x2=x;
+        if (y < bb.y1) bb.y1=y; if (y > bb.y2) bb.y2=y;
+      }
+    }
+  }
+  const blobs = [];
+  for (let L = 0; L < count; L++) {
+    const area = compCount[L];
+    if (!area || area < minArea || !compBBox[L]) continue;
+    const bb = compBBox[L];
+    const bw = bb.x2 - bb.x1 + 1, bh = bb.y2 - bb.y1 + 1;
+    blobs.push({ area, bbox: bb, aspectRatio: Math.max(bw,bh) / Math.min(bw,bh) });
+  }
+  return blobs;
+}
+
+// ── Etiket-regio vinden: grootste compacte witte blob ─────────
+// Etiket = groot, wit, rechthoekig (aspect ratio < 3.5)
+// Strip-body = smal, langwerpig (aspect ratio > 5) → uitgesloten
+function findLabelRegion(imgData, w, h) {
+  const whiteMask = buildWhiteMask(imgData, w, h);
+  const { labels, count } = labelComponents(whiteMask, w, h);
+  const whiteBlobs = buildWhiteBlobs(labels, w, h, count, 0.008);
+  // Sorteer op oppervlak (groot → klein); pak eerste met compact aspect ratio
+  whiteBlobs.sort((a, b) => b.area - a.area);
+  const label = whiteBlobs.find(b => b.aspectRatio < 3.5);
+  return label ? label.bbox : null;  // { x1, y1, x2, y2 }
+}
+
+// ── Masker-helpers: nul alles buiten / binnen een bbox ────────
+function maskOutsideBbox(mask, bbox, w, margin = 15) {
+  const x1 = Math.max(0, bbox.x1 - margin);
+  const y1 = Math.max(0, bbox.y1 - margin);
+  const x2 = bbox.x2 + margin;
+  const y2 = bbox.y2 + margin;
+  const h = mask.length / w;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (x < x1 || x > x2 || y < y1 || y > y2) mask[y*w+x] = 0;
+    }
+  }
+}
+function maskInsideBbox(mask, bbox, w, margin = 15) {
+  const x1 = Math.max(0, bbox.x1 - margin);
+  const y1 = Math.max(0, bbox.y1 - margin);
+  const x2 = bbox.x2 + margin;
+  const y2 = bbox.y2 + margin;
+  const h = mask.length / w;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (x >= x1 && x <= x2 && y >= y1 && y <= y2) mask[y*w+x] = 0;
+    }
+  }
+}
+
 // ── Saturatiemask ─────────────────────────────────────────────
 function buildSatMask(imgData, w, h, thresh = 0.18) {
   const d = imgData.data;
@@ -2079,25 +2164,41 @@ async function autoDetect() {
     tmp.getContext('2d').drawImage(ANALYZE_IMG, 0, 0, dw, dh);
     const imgData = tmp.getContext('2d').getImageData(0, 0, dw, dh);
 
-    // Saturatiemask → label components → blobs
-    const satMask = buildSatMask(imgData, dw, dh, 0.18);
-    const { labels, count } = labelComponents(satMask, dw, dh);
-    const blobs50 = buildBlobs(labels, imgData, dw, dh, count);
+    // ── Wit-etiket als ruimtelijk anker ──────────────────────────
+    // Kaart-cellen zitten altijd op het witte flesje-etiket.
+    // Strip-pads zitten erbuiten. Dit splitst de zoekruimten.
+    const labelBbox50 = findLabelRegion(imgData, dw, dh);
 
-    // ── VOLGORDE: kaart eerst (2D grid = unieke structuur),
-    //             dan strip op resterende blobs ──────────────────
-    // Stap 1: kaart detectie op alle blobs (geen uitsluiting)
-    const chartResult50 = detectChartGrid(blobs50, new Set(), dw, dh);
+    let chartBlobs50, stripBlobs50;
 
-    // Stap 2: kaart-blob labels verzamelen zodat RANSAC ze overslaat
-    const chartBlobLabels = new Set();
-    if (chartResult50) {
-      for (const row of chartResult50.rowBlobs)
-        for (const b of row) chartBlobLabels.add(b.label);
+    if (labelBbox50) {
+      // Kaart: sat-drempel 0.12 (lichtere referentie-cellen zoals "0 ppm")
+      //        alleen BINNEN etiket-bbox zoeken
+      const satChart = buildSatMask(imgData, dw, dh, 0.12);
+      maskOutsideBbox(satChart, labelBbox50, dw, 15);
+      const cLbl = labelComponents(satChart, dw, dh);
+      chartBlobs50 = buildBlobs(cLbl.labels, imgData, dw, dh, cLbl.count);
+
+      // Strip: sat-drempel 0.18 (pads zijn sterk gekleurd na waterdoop)
+      //        alleen BUITEN etiket-bbox zoeken
+      const satStrip = buildSatMask(imgData, dw, dh, 0.18);
+      maskInsideBbox(satStrip, labelBbox50, dw, 15);
+      const sLbl = labelComponents(satStrip, dw, dh);
+      stripBlobs50 = buildBlobs(sLbl.labels, imgData, dw, dh, sLbl.count);
+    } else {
+      // Fallback: geen etiket gevonden → gemeenschappelijk masker
+      const satMask = buildSatMask(imgData, dw, dh, 0.18);
+      const { labels, count } = labelComponents(satMask, dw, dh);
+      const allBlobs = buildBlobs(labels, imgData, dw, dh, count);
+      chartBlobs50 = allBlobs;
+      stripBlobs50 = allBlobs;
     }
 
-    // Stap 3: RANSAC op niet-kaart-blobs → 4 collineaire pads = strip
-    const stripResult50 = ransacFindStrip(blobs50, dw, dh, chartBlobLabels);
+    // Kaart detectie op kaart-blobs (geen strip-contaminatie meer)
+    const chartResult50 = detectChartGrid(chartBlobs50, new Set(), dw, dh);
+
+    // Strip detectie op strip-blobs (geen kaart-contaminatie meer)
+    const stripResult50 = ransacFindStrip(stripBlobs50, dw, dh, new Set());
     const stripBlobLabels = new Set(stripResult50 ? stripResult50.padBlobs.map(b => b.label) : []);
 
     // Schaal terug naar full-res
