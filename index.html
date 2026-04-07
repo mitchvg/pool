@@ -95,6 +95,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 .roi-btn.chart.active,.roi-btn.chart:hover{background:#009eb0;color:#fff}
 .roi-btn.chart.done{background:#009eb0;color:#fff}
 button:disabled{opacity:.4;cursor:default}
+.crot-btn{padding:4px 8px;font-size:10px;font-weight:600;border:1.5px solid #009eb0;border-radius:6px;background:transparent;color:#009eb0;cursor:pointer;white-space:nowrap}
+.crot-btn.on{background:#009eb0;color:#fff}
 /* Debug panel */
 details summary{cursor:pointer;font-size:11px;color:var(--t3);padding:3px 0;user-select:none}
 .dbg-row{margin-bottom:10px}
@@ -144,7 +146,8 @@ const CHART_LAYOUT = [
 ];
 // Volgorde strip pads (top → bottom, handvat onderaan)
 const STRIP_PAD_ORDER = ['ph','chlorine','alkalinity','stabilizer'];
-const SAMPLE_MARGIN   = 0.2; // 20% marge aan elke kant voor center-crop
+const SAMPLE_MARGIN   = 0.25; // 25% marge aan elke kant voor center-crop
+let   CHART_ROT       = 0;   // 0=pH boven, 1=pH rechts, 2=pH onder, 3=pH links
 
 // ── URL params + localStorage ─────────────────────────────────
 function getParam(k) {
@@ -350,8 +353,15 @@ function buildForm() {
         <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
           <div id="roi-status" style="font-size:11px;color:var(--t3);flex:1">Selecteer de teststrip en de kleurenkaart</div>
           <label style="font-size:11px;color:var(--t3);cursor:pointer;display:flex;align-items:center;gap:3px;margin:0;white-space:nowrap">
-            <input type="checkbox" id="roi-flip" onchange="renderROIOverlay()" style="width:auto;padding:0"> Omdraaien
+            <input type="checkbox" id="roi-flip" onchange="renderROIOverlay()" style="width:auto;padding:0"> Strip omdraaien
           </label>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap">
+          <span style="font-size:10px;color:var(--t3)">pH-rij staat:</span>
+          <button class="crot-btn on" id="crot0" onclick="setChartRot(0)">▲ Boven</button>
+          <button class="crot-btn"    id="crot1" onclick="setChartRot(1)">▶ Rechts</button>
+          <button class="crot-btn"    id="crot2" onclick="setChartRot(2)">▼ Onder</button>
+          <button class="crot-btn"    id="crot3" onclick="setChartRot(3)">◀ Links</button>
         </div>
         <details id="debug-details" style="display:none;margin-top:8px">
           <summary>Debug info (crops + ΔE waarden)</summary>
@@ -570,6 +580,15 @@ function startROI(mode) {
   updateROIStatus();
 }
 
+function setChartRot(r) {
+  CHART_ROT = r;
+  [0,1,2,3].forEach(i => {
+    const b = document.getElementById('crot' + i);
+    if (b) b.classList.toggle('on', i === r);
+  });
+  renderROIOverlay();
+}
+
 function updateROIStatus() {
   const status     = document.getElementById('roi-status');
   const analyseBtn = document.getElementById('roi-analyse-btn');
@@ -668,20 +687,39 @@ function renderROIOverlay(dragFrom = null, dragTo = null) {
     ctx.setLineDash([]);
   }
 
-  // Grid-preview referentiekaart
+  // Grid-preview referentiekaart (rotation-aware)
   if (ROI.chart) {
-    const r = ROI.chart;
-    ctx.strokeStyle = 'rgba(0,158,176,.5)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
-    for (let i = 1; i < CHART_LAYOUT.length; i++) {
-      const y = (r.y1+(r.y2-r.y1)*i/CHART_LAYOUT.length)*s;
-      ctx.beginPath(); ctx.moveTo(r.x1*s,y); ctx.lineTo(r.x2*s,y); ctx.stroke();
+    const r   = ROI.chart;
+    const cw  = (r.x2-r.x1)*s, ch = (r.y2-r.y1)*s;
+    const nR  = CHART_LAYOUT.length;
+    const nC  = Math.max(...CHART_LAYOUT.map(l=>l.cols));
+    ctx.strokeStyle = 'rgba(0,158,176,.55)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+    const rot = CHART_ROT % 4;
+    const horiz = rot === 0 || rot === 2; // row direction = vertical (horizontal lines)
+    if (horiz) {
+      for (let i = 1; i < nR; i++) {
+        const y = rot===0 ? (r.y1+(r.y2-r.y1)*i/nR)*s : (r.y2-(r.y2-r.y1)*i/nR)*s;
+        ctx.beginPath(); ctx.moveTo(r.x1*s,y); ctx.lineTo(r.x2*s,y); ctx.stroke();
+      }
+      for (let i = 1; i < nC; i++) {
+        const x = rot===0 ? (r.x1+(r.x2-r.x1)*i/nC)*s : (r.x2-(r.x2-r.x1)*i/nC)*s;
+        ctx.beginPath(); ctx.moveTo(x,r.y1*s); ctx.lineTo(x,r.y2*s); ctx.stroke();
+      }
+    } else {
+      for (let i = 1; i < nR; i++) {
+        const x = rot===1 ? (r.x2-(r.x2-r.x1)*i/nR)*s : (r.x1+(r.x2-r.x1)*i/nR)*s;
+        ctx.beginPath(); ctx.moveTo(x,r.y1*s); ctx.lineTo(x,r.y2*s); ctx.stroke();
+      }
+      for (let i = 1; i < nC; i++) {
+        const y = rot===1 ? (r.y1+(r.y2-r.y1)*i/nC)*s : (r.y2-(r.y2-r.y1)*i/nC)*s;
+        ctx.beginPath(); ctx.moveTo(r.x1*s,y); ctx.lineTo(r.x2*s,y); ctx.stroke();
+      }
     }
-    const maxCols = Math.max(...CHART_LAYOUT.map(l=>l.cols));
-    for (let i = 1; i < maxCols; i++) {
-      const x = (r.x1+(r.x2-r.x1)*i/maxCols)*s;
-      ctx.beginPath(); ctx.moveTo(x,r.y1*s); ctx.lineTo(x,r.y2*s); ctx.stroke();
-    }
-    ctx.setLineDash([]);
+    // pH label
+    ctx.setLineDash([]); ctx.fillStyle='#009eb0'; ctx.font='bold 10px sans-serif';
+    const lx = r.x1*s+3, ly = r.y1*s+11;
+    const labels = ['pH▼','pH◀','pH▲','pH▶'];
+    ctx.fillText(labels[rot], lx, ly);
   }
 
   // Lopende drag
@@ -734,6 +772,62 @@ function sampleCell(ctx, x, y, w, h) {
   return { r, g, b, lab: rgbToLab(r, g, b), sr:{x:sx,y:sy,w:sw,h:sh} };
 }
 
+// ── Strip pad-regio detecteren op basis van saturatie ─────────
+// Geeft { startFrac, endFrac, autoFlip } terug in fraties van de ROI-lengte.
+// autoFlip=true betekent dat de handgreep aan het BEGIN van de ROI zit.
+function detectPadRegion(wCtx, roi) {
+  const vert  = (roi.y2-roi.y1) >= (roi.x2-roi.x1);
+  const len   = vert ? (roi.y2-roi.y1) : (roi.x2-roi.x1);
+  const cross = vert ? (roi.x2-roi.x1) : (roi.y2-roi.y1);
+  const N = 24, cm = 0.1;  // 24 slices, 10% cross-margin
+
+  const sats = [];
+  for (let i = 0; i < N; i++) {
+    const off = len * i / N, sz = len / N;
+    const [sx,sy,sw,sh] = vert
+      ? [roi.x1+cross*cm, roi.y1+off, Math.max(1,cross*(1-2*cm)), Math.max(1,sz)]
+      : [roi.x1+off, roi.y1+cross*cm, Math.max(1,sz), Math.max(1,cross*(1-2*cm))];
+    const data = wCtx.getImageData(Math.round(sx),Math.round(sy),Math.round(sw),Math.round(sh)).data;
+    let s=0, n=0;
+    for (let j=0; j<data.length; j+=4) {
+      const mx=Math.max(data[j],data[j+1],data[j+2]), mn=Math.min(data[j],data[j+1],data[j+2]);
+      s += mx>0 ? (mx-mn)/mx : 0; n++;
+    }
+    sats.push(n>0 ? s/n : 0);
+  }
+
+  const maxSat = Math.max(...sats);
+  if (maxSat < 0.04) return { startFrac:0, endFrac:1, autoFlip:false }; // geen contrast
+
+  const thresh = maxSat * 0.28;
+  let first=N, last=-1;
+  for (let i=0; i<N; i++) if (sats[i]>=thresh) { if (i<first) first=i; last=i; }
+
+  // Klein buffer erbij
+  first = Math.max(0, first-1);
+  last  = Math.min(N-1, last+1);
+  const startFrac = first/N, endFrac = (last+1)/N;
+
+  // Handgreep = eind met laagste saturatie
+  // Als pads pas beginnen na >30% van strip → handgreep zit aan het begin → autoFlip
+  return { startFrac, endFrac, autoFlip: startFrac > 0.3 };
+}
+
+// ── Cel-rechthoek in referentiekaart (rotation-aware) ─────────
+function getChartCellRect(cr, rowIdx, numRows, colIdx, numCols) {
+  const cw = cr.x2-cr.x1, ch = cr.y2-cr.y1;
+  switch (CHART_ROT % 4) {
+    case 0: // pH boven
+      return { x:cr.x1+colIdx/numCols*cw, y:cr.y1+rowIdx/numRows*ch, w:cw/numCols, h:ch/numRows };
+    case 1: // pH rechts
+      return { x:cr.x2-(rowIdx+1)/numRows*cw, y:cr.y1+colIdx/numCols*ch, w:cw/numRows, h:ch/numCols };
+    case 2: // pH onder
+      return { x:cr.x2-(colIdx+1)/numCols*cw, y:cr.y2-(rowIdx+1)/numRows*ch, w:cw/numCols, h:ch/numRows };
+    case 3: // pH links
+      return { x:cr.x1+rowIdx/numRows*cw, y:cr.y2-(colIdx+1)/numCols*ch, w:cw/numRows, h:ch/numCols };
+  }
+}
+
 // ── Hoofdanalyse ──────────────────────────────────────────────
 async function runAnalysis() {
   if (!ANALYZE_IMG || !ROI.strip || !ROI.chart) return;
@@ -748,37 +842,39 @@ async function runAnalysis() {
     _ANALYSIS_WC.getContext('2d').drawImage(ANALYZE_IMG, 0, 0);
   }
   const wCtx = _ANALYSIS_WC.getContext('2d');
-  const flip  = document.getElementById('roi-flip')?.checked ?? false;
-  const sr    = ROI.strip;
-  const cr    = ROI.chart;
+  const sr   = ROI.strip;
+  const cr   = ROI.chart;
 
-  // Strip pads samplen
-  const stripVert = (sr.y2-sr.y1) >= (sr.x2-sr.x1);
-  const padLen    = stripVert ? (sr.y2-sr.y1)/4 : (sr.x2-sr.x1)/4;
-  const padWidth  = stripVert ? (sr.x2-sr.x1)   : (sr.y2-sr.y1);
+  // ── Strip: detecteer pad-regio, sla handgreep over ──────────
+  const padInfo    = detectPadRegion(wCtx, sr);
+  const manualFlip = document.getElementById('roi-flip')?.checked ?? false;
+  const flip       = padInfo.autoFlip !== manualFlip; // XOR: auto + handmatige override
+  const stripVert  = (sr.y2-sr.y1) >= (sr.x2-sr.x1);
+  const totalLen   = stripVert ? (sr.y2-sr.y1) : (sr.x2-sr.x1);
+  const padOffset  = padInfo.startFrac * totalLen;
+  const padRegLen  = (padInfo.endFrac - padInfo.startFrac) * totalLen;
+  const padLen     = padRegLen / 4;
 
   const padSamples = {}, padRects = {};
   STRIP_PAD_ORDER.forEach((key, i) => {
-    const idx = flip ? (3-i) : i;  // flip: draai volgorde om
+    const idx = flip ? (3-i) : i;
     let px, py, pw, ph;
-    if (stripVert) { px=sr.x1;          py=sr.y1+idx*padLen; pw=sr.x2-sr.x1; ph=padLen; }
-    else           { px=sr.x1+idx*padLen; py=sr.y1;           pw=padLen; ph=sr.y2-sr.y1; }
+    if (stripVert) { px=sr.x1; py=sr.y1+padOffset+idx*padLen; pw=sr.x2-sr.x1; ph=padLen; }
+    else           { px=sr.x1+padOffset+idx*padLen; py=sr.y1; pw=padLen; ph=sr.y2-sr.y1; }
     padSamples[key] = sampleCell(wCtx, px, py, pw, ph);
     padRects[key]   = { x:px, y:py, w:pw, h:ph };
   });
 
-  // Referentiekaart cellen samplen
-  const rowH = (cr.y2-cr.y1) / CHART_LAYOUT.length;
+  // ── Referentiekaart: rotation-aware cellen samplen ───────────
   const chartSamples = {}, chartRects = {};
+  const numRows = CHART_LAYOUT.length;
   CHART_LAYOUT.forEach((row, ri) => {
-    const colW = (cr.x2-cr.x1) / row.cols;
-    const ry   = cr.y1 + ri * rowH;
     chartSamples[row.key] = [];
     chartRects[row.key]   = [];
     for (let ci = 0; ci < row.cols; ci++) {
-      const cx = cr.x1 + ci * colW;
-      chartSamples[row.key].push(sampleCell(wCtx, cx, ry, colW, rowH));
-      chartRects[row.key].push({ x:cx, y:ry, w:colW, h:rowH });
+      const rect = getChartCellRect(cr, ri, numRows, ci, row.cols);
+      chartSamples[row.key].push(sampleCell(wCtx, rect.x, rect.y, rect.w, rect.h));
+      chartRects[row.key].push(rect);
     }
   });
 
