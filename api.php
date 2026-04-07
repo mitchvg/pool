@@ -531,55 +531,78 @@ function aiStrip(): void {
 You are analyzing a pool water test strip photo.
 
 ═══ STEP 1: FIND THE TEST STRIP ═══
-The test strip is a narrow white or light plastic stick with exactly 4 small colored square reaction pads and one blank white end (the handle).
-  • Width: roughly 3–8% of the image width or height (it is NARROW)
-  • The strip and the bottle are SEPARATE objects — they are NOT touching
-  • The strip may be anywhere in the image — edges, corners, far from the bottle
-  • The strip may be vertical, horizontal, or at an angle
-  • Search the ENTIRE image for the narrow strip before looking at the bottle
+The test strip is a narrow white plastic stick (~3–8% of image width) with:
+  • 4 small colored square reaction pads in a row
+  • One HANDLE end: plain white plastic, no pad, longer blank section
 
-First, output strip_bbox: the tight bounding box around the ENTIRE strip (all 4 pads + handle).
+ORIENTATION RULE:
+  The HANDLE is the bottom end (longer white section, no color).
+  Count pads from the handle upward (or outward):
+    pad 1 nearest handle  = STABILIZER
+    pad 2                 = TOTAL ALKALINITY
+    pad 3                 = FREE CHLORINE
+    pad 4 farthest handle = pH (END PAD)
+  The strip may be at any angle or position — search the entire image.
 
-Then identify the blank white HANDLE end (no colored pad, just white plastic).
-Pad order counting outward from the handle:
-  pad 1 (nearest handle)  = STABILIZER
-  pad 2                   = TOTAL ALKALINITY
-  pad 3                   = FREE CHLORINE
-  pad 4 (farthest handle) = pH (END PAD)
-
-For each pad give a tight pad_bbox covering ONLY that single pad — not the neighboring pad, not the white strip body.
+Output:
+  strip_bbox: tight box around the ENTIRE strip (all pads + handle)
+  For each pad: pad_bbox covering ONLY that single pad square
 
 ═══ STEP 2: FIND THE REFERENCE CHART ═══
-The Aquachek color reference chart is printed on the bottle or packaging. It has 4 labeled parameter sections.
-The bottle may be upright, rotated 90°, or rotated 180° (upside down) — read the labels regardless of orientation.
-Identify it by the labels: "pH (END PAD)", "ppm FREE CHLORINE", "ppm TOTAL ALKALINITY", "ppm STABILIZER (PAD NEAREST HANDLE)".
+The Aquachek reference chart is printed on the bottle. The bottle may be upright,
+rotated 90°, or upside down — use the printed text labels to determine orientation.
+Labels to find: "pH (END PAD)", "ppm FREE CHLORINE", "ppm TOTAL ALKALINITY",
+                "ppm STABILIZER (PAD NEAREST HANDLE)"
 
-Each parameter section is a row (or column if chart is rotated 90°) of colored cells with numeric values:
-  pH row:         5 cells — 6.2  6.8  7.2  7.8  8.4
-  Chlorine row:   6 cells — 0  0.5  1  3  5  10
-  Alkalinity row: 6 cells — 0  40  80  120  180  240
-  Stabilizer row: 5 cells — 0  30-50  100  150  300
+For each of the 4 parameters, find its row (or column) of color cells and return
+EACH CELL as a separate entry with its printed numeric value:
+  pH:         5 cells — 6.2  6.8  7.2  7.8  8.4
+  Chlorine:   6 cells — 0  0.5  1  3  5  10
+  Alkalinity: 6 cells — 0  40  80  120  180  240
+  Stabilizer: 5 cells — 0  30-50  100  150  300  (use value 40 for the 30-50 cell)
 
-For each parameter:
-1. Note the pad's actual color exactly as it appears in the photo
-2. Locate the correct labeled row (or column) in the reference chart
-3. Return ref_row_bbox: the bounding box covering the ENTIRE row/column (all cells together, no labels)
-4. Find the cell in that row whose color most closely matches the pad color
-5. Use the numeric value printed on that cell as the measured value
+For each cell give a tight bbox covering ONLY that color square (not labels, not gaps).
+Then compare the pad color to all cells in that parameter's row and pick the closest match.
 
-═══ OUTPUT ═══
-Return ONLY valid JSON — no markdown, no extra text:
+═══ OUTPUT — valid JSON only, no markdown ═══
 {
   "strip_bbox": [x1,y1,x2,y2],
-  "ph":         { "value": 7.2, "pad_bbox": [x1,y1,x2,y2], "ref_row_bbox": [x1,y1,x2,y2], "reasoning": "orange-tan pad best matches 7.2 cell" },
-  "chlorine":   { "value": 1.0, "pad_bbox": [x1,y1,x2,y2], "ref_row_bbox": [x1,y1,x2,y2], "reasoning": "very light lavender matches 1 ppm cell" },
-  "alkalinity": { "value": 80,  "pad_bbox": [x1,y1,x2,y2], "ref_row_bbox": [x1,y1,x2,y2], "reasoning": "olive-green matches 80 ppm cell" },
-  "stabilizer": { "value": 40,  "pad_bbox": [x1,y1,x2,y2], "ref_row_bbox": [x1,y1,x2,y2], "reasoning": "golden-yellow matches 30-50 IDEAL cell" }
+  "ph":         { "value": 6.8, "pad_bbox": [x1,y1,x2,y2],
+                  "ref_cells": [
+                    {"v":6.2,"bbox":[x1,y1,x2,y2]},
+                    {"v":6.8,"bbox":[x1,y1,x2,y2]},
+                    {"v":7.2,"bbox":[x1,y1,x2,y2]},
+                    {"v":7.8,"bbox":[x1,y1,x2,y2]},
+                    {"v":8.4,"bbox":[x1,y1,x2,y2]}
+                  ] },
+  "chlorine":   { "value": 3.0, "pad_bbox": [x1,y1,x2,y2],
+                  "ref_cells": [
+                    {"v":0,  "bbox":[x1,y1,x2,y2]},
+                    {"v":0.5,"bbox":[x1,y1,x2,y2]},
+                    {"v":1,  "bbox":[x1,y1,x2,y2]},
+                    {"v":3,  "bbox":[x1,y1,x2,y2]},
+                    {"v":5,  "bbox":[x1,y1,x2,y2]},
+                    {"v":10, "bbox":[x1,y1,x2,y2]}
+                  ] },
+  "alkalinity": { "value": 40, "pad_bbox": [x1,y1,x2,y2],
+                  "ref_cells": [
+                    {"v":0,  "bbox":[x1,y1,x2,y2]},
+                    {"v":40, "bbox":[x1,y1,x2,y2]},
+                    {"v":80, "bbox":[x1,y1,x2,y2]},
+                    {"v":120,"bbox":[x1,y1,x2,y2]},
+                    {"v":180,"bbox":[x1,y1,x2,y2]},
+                    {"v":240,"bbox":[x1,y1,x2,y2]}
+                  ] },
+  "stabilizer": { "value": 40, "pad_bbox": [x1,y1,x2,y2],
+                  "ref_cells": [
+                    {"v":0,  "bbox":[x1,y1,x2,y2]},
+                    {"v":40, "bbox":[x1,y1,x2,y2]},
+                    {"v":100,"bbox":[x1,y1,x2,y2]},
+                    {"v":150,"bbox":[x1,y1,x2,y2]},
+                    {"v":300,"bbox":[x1,y1,x2,y2]}
+                  ] }
 }
-All bbox values are % of the FULL image dimensions (0–100). x1<x2, y1<y2.
-strip_bbox: tight box around the whole strip including all pads and handle.
-pad_bbox: tight box around ONE pad only — must be INSIDE strip_bbox.
-ref_row_bbox: tight box around ALL cells in the parameter's chart row/column (no text labels, just the color cells).
+All bbox values: % of FULL image dimensions (0–100), x1<x2, y1<y2.
 PROMPT;
 
     $payload = json_encode([
@@ -617,22 +640,18 @@ PROMPT;
     // Valideer en saniteer waarden
     respond([
         'strip_bbox' => $v['strip_bbox'] ?? null,
-        'ph'        => ['value'        => min(9,   max(6,   round((float)($v['ph']['value']         ?? 7.4), 1))),
-                        'pad_bbox'     => $v['ph']['pad_bbox']          ?? null,
-                        'ref_row_bbox' => $v['ph']['ref_row_bbox']      ?? null,
-                        'reasoning'    => $v['ph']['reasoning']         ?? ''],
-        'chlorine'  => ['value'        => min(10,  max(0,   round((float)($v['chlorine']['value']   ?? 1.5), 1))),
-                        'pad_bbox'     => $v['chlorine']['pad_bbox']    ?? null,
-                        'ref_row_bbox' => $v['chlorine']['ref_row_bbox'] ?? null,
-                        'reasoning'    => $v['chlorine']['reasoning']   ?? ''],
-        'alkalinity'=> ['value'        => min(300, max(0,   (int)($v['alkalinity']['value']         ?? 100))),
-                        'pad_bbox'     => $v['alkalinity']['pad_bbox']    ?? null,
-                        'ref_row_bbox' => $v['alkalinity']['ref_row_bbox'] ?? null,
-                        'reasoning'    => $v['alkalinity']['reasoning']   ?? ''],
-        'stabilizer'=> ['value'        => min(300, max(0,   (int)($v['stabilizer']['value']         ?? 40))),
-                        'pad_bbox'     => $v['stabilizer']['pad_bbox']    ?? null,
-                        'ref_row_bbox' => $v['stabilizer']['ref_row_bbox'] ?? null,
-                        'reasoning'    => $v['stabilizer']['reasoning']   ?? ''],
+        'ph'        => ['value'     => min(9,   max(6,   round((float)($v['ph']['value']         ?? 6.2), 1))),
+                        'pad_bbox'  => $v['ph']['pad_bbox']    ?? null,
+                        'ref_cells' => $v['ph']['ref_cells']   ?? []],
+        'chlorine'  => ['value'     => min(10,  max(0,   round((float)($v['chlorine']['value']   ?? 0),   1))),
+                        'pad_bbox'  => $v['chlorine']['pad_bbox']    ?? null,
+                        'ref_cells' => $v['chlorine']['ref_cells']   ?? []],
+        'alkalinity'=> ['value'     => min(300, max(0,   (int)($v['alkalinity']['value']         ?? 0))),
+                        'pad_bbox'  => $v['alkalinity']['pad_bbox']  ?? null,
+                        'ref_cells' => $v['alkalinity']['ref_cells'] ?? []],
+        'stabilizer'=> ['value'     => min(300, max(0,   (int)($v['stabilizer']['value']         ?? 0))),
+                        'pad_bbox'  => $v['stabilizer']['pad_bbox']  ?? null,
+                        'ref_cells' => $v['stabilizer']['ref_cells'] ?? []],
     ]);
 }
 

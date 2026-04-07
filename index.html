@@ -342,25 +342,25 @@ function buildForm() {
 // ── Parameter definities + referentie-kleuren ────────────────
 // Gebaseerd op Aquachek 4-in-1 kleurenkaart
 const PARAMS = [
-  { key:'ph',         label:'pH',          fid:'f-ph',   min:6.2, max:8.4, step:.1, dec:1, def:7.4,
+  { key:'ph',         label:'pH',          fid:'f-ph',   min:6.2, max:8.4, step:.1, dec:1, def:6.2,
     cells:[
       {v:6.2,c:'#FF9800',t:'#333'},{v:6.8,c:'#E07030',t:'#fff'},
       {v:7.2,c:'#C05830',t:'#fff'},{v:7.8,c:'#A04020',t:'#fff'},
       {v:8.4,c:'#7A2810',t:'#fff'}
     ]},
-  { key:'chlorine',   label:'Chloor (ppm)',fid:'f-cl',   min:0,   max:10,  step:.5, dec:1, def:1.5,
+  { key:'chlorine',   label:'Chloor (ppm)',fid:'f-cl',   min:0,   max:10,  step:.5, dec:1, def:0,
     cells:[
       {v:0,  c:'#FFFFFF',t:'#999'},{v:0.5,c:'#FFDEDE',t:'#333'},
       {v:1,  c:'#FFAAAA',t:'#333'},{v:3,  c:'#FF7777',t:'#fff'},
       {v:5,  c:'#EE4488',t:'#fff'},{v:10, c:'#BB0044',t:'#fff'}
     ]},
-  { key:'alkalinity', label:'ALK. (ppm)',  fid:'f-alk',  min:0,   max:240, step:1,  dec:0, def:100,
+  { key:'alkalinity', label:'ALK. (ppm)',  fid:'f-alk',  min:0,   max:240, step:1,  dec:0, def:0,
     cells:[
       {v:0,  c:'#E8E820',t:'#333'},{v:40, c:'#B0B820',t:'#333'},
       {v:80, c:'#7A8A10',t:'#fff'},{v:120,c:'#406820',t:'#fff'},
       {v:180,c:'#2A5010',t:'#fff'},{v:240,c:'#1A3808',t:'#fff'}
     ]},
-  { key:'stabilizer', label:'Stabilizer',  fid:'f-stab', min:0,   max:300, step:1,  dec:0, def:50,
+  { key:'stabilizer', label:'Stabilizer',  fid:'f-stab', min:0,   max:300, step:1,  dec:0, def:0,
     cells:[
       {v:0,  c:'#F8F8FF',t:'#999'},{v:40, c:'#EED8F8',t:'#333'},
       {v:100,c:'#B070D8',t:'#fff'},{v:150,c:'#8840B0',t:'#fff'},
@@ -374,7 +374,7 @@ function paramCard(p) {
     `${c.c} ${((c.v - p.min) / (p.max - p.min) * 100).toFixed(1)}%`
   ).join(', ');
   const refCells = p.cells.map((c, i) =>
-    `<canvas id="crc-${p.key}-${i}" width="32" height="28"
+    `<canvas id="crc-${p.key}-${i}" width="40" height="32"
        style="border-radius:4px;border:2px solid transparent;flex-shrink:0"
        title="${c.v}"></canvas>`
   ).join('');
@@ -457,43 +457,34 @@ function onSlider(key, dec, fid) {
   window._adviceTimer = setTimeout(showAdvice, 700);
 }
 
-function bboxOverlaps(a, b) {
-  return a && b && a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
-}
-
 function doCrop(key) {
   if (!AI_IMG?.complete || !AI_RESULT) return;
   const r = AI_RESULT[key];
-  const p = PARAMS.find(x => x.key === key);
-  if (!p) return;
+  if (!r) return;
 
-  if (r?.pad_bbox && bboxOverlaps(r.pad_bbox, AI_RESULT.strip_bbox)) {
+  if (r.pad_bbox) {
     cropCanvas('cp-' + key, r.pad_bbox);
     const pw = document.getElementById('pw-' + key);
     if (pw) pw.style.display = 'block';
   }
 
-  if (r?.ref_row_bbox) {
-    const n = p.cells.length;
-    const [x1, y1, x2, y2] = r.ref_row_bbox;
-    const rowW = x2 - x1, rowH = y2 - y1;
-    const vertical = rowH > rowW;
-
+  if (r.ref_cells?.length) {
     const val = r.value ?? 0;
     let bestIdx = 0, bestDist = Infinity;
-    p.cells.forEach((c, i) => {
+    r.ref_cells.forEach((c, i) => {
       const d = Math.abs(c.v - val);
       if (d < bestDist) { bestDist = d; bestIdx = i; }
     });
 
-    for (let i = 0; i < n; i++) {
-      const bbox = vertical
-        ? [x1, y1 + i*(rowH/n), x2, y1 + (i+1)*(rowH/n)]
-        : [x1 + i*(rowW/n), y1, x1 + (i+1)*(rowW/n), y2];
-      cropCanvas('crc-' + key + '-' + i, bbox);
+    r.ref_cells.forEach((cell, i) => {
+      cropCanvas('crc-' + key + '-' + i, cell.bbox);
       const cv = document.getElementById('crc-' + key + '-' + i);
-      if (cv) cv.style.border = (i === bestIdx) ? '2px solid var(--g)' : '2px solid transparent';
-    }
+      if (cv) {
+        cv.style.border = (i === bestIdx) ? '2px solid var(--g)' : '2px solid transparent';
+        cv.title = cell.v;
+      }
+    });
+
     const rw = document.getElementById('rw-' + key);
     if (rw) rw.style.display = 'flex';
   }
