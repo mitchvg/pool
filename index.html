@@ -1346,40 +1346,43 @@ function buildBlobs(labels, imgData, w, h, count) {
 }
 
 // ── RANSAC: vind strip van 4 regelmatige blobs op een lijn ────
-function ransacFindStrip(blobs, w, h) {
-  if (blobs.length < 4) return null;
-  const avgBlobR = blobs.reduce((s,b) => s + Math.sqrt(b.area), 0) / blobs.length;
+// excludeSet: Set van labels die al tot de kaart behoren → niet gebruiken
+function ransacFindStrip(blobs, w, h, excludeSet = new Set()) {
+  const candidates = excludeSet.size > 0 ? blobs.filter(b => !excludeSet.has(b.label)) : blobs;
+  if (candidates.length < 4) return null;
+  const avgBlobR = candidates.reduce((s,b) => s + Math.sqrt(b.area), 0) / candidates.length;
   const D = 1.5 * avgBlobR;
-  const ITERS = 150;
+  const ITERS = 200;
 
   let bestResult = null, bestScore = -1;
 
   for (let iter = 0; iter < ITERS; iter++) {
-    const i1 = Math.floor(Math.random() * blobs.length);
-    let i2 = Math.floor(Math.random() * (blobs.length - 1));
+    const i1 = Math.floor(Math.random() * candidates.length);
+    let i2 = Math.floor(Math.random() * (candidates.length - 1));
     if (i2 >= i1) i2++;
-    const b1 = blobs[i1], b2 = blobs[i2];
+    const b1 = candidates[i1], b2 = candidates[i2];
     const dx = b2.cx - b1.cx, dy = b2.cy - b1.cy;
     const len = Math.sqrt(dx*dx + dy*dy);
     if (len < 2) continue;
-    const nx = -dy/len, ny = dx/len; // normal
+    const nx = -dy/len, ny = dx/len; // normaal
 
-    // Inliers: within D pixels of line
-    const inliers = blobs.filter(b => {
+    // Inliers: binnen D pixels van lijn
+    const inliers = candidates.filter(b => {
       const ex = b.cx - b1.cx, ey = b.cy - b1.cy;
       return Math.abs(ex*nx + ey*ny) <= D;
     });
     if (inliers.length < 3) continue;
 
-    // Sort along axis
+    // Sorteer langs as
     const ax = dx/len, ay = dy/len;
+    const bx = -ay,    by = ax;  // dwarss-as
     inliers.sort((a, b) => {
       const ta = (a.cx-b1.cx)*ax + (a.cy-b1.cy)*ay;
       const tb = (b.cx-b1.cx)*ax + (b.cy-b1.cy)*ay;
       return ta - tb;
     });
 
-    // Find best consecutive group of exactly 4
+    // Beste aaneengesloten groep van exact 4
     for (let start = 0; start <= inliers.length - 4; start++) {
       const grp = inliers.slice(start, start + 4);
       const spacings = [];
@@ -1391,7 +1394,28 @@ function ransacFindStrip(blobs, w, h) {
       if (meanSp < 4) continue;
       const stdSp = Math.sqrt(spacings.reduce((s,sp) => s + (sp-meanSp)**2, 0) / spacings.length);
       const regularity = Math.max(0, 1 - stdSp / meanSp);
-      const score = regularity * 4; // 4 = count bonus
+
+      // Cross-isolatie: strip-pads hebben GEEN buren in dwarsrichting (kaartcellen wel)
+      // Als ≥2 van de 4 pads een dwars-buur hebben → dit is een kaartrij, niet de strip
+      let crossNeighborCount = 0;
+      for (const grpBlob of grp) {
+        const grpLabels = new Set(grp.map(g => g.label));
+        for (const other of candidates) {
+          if (grpLabels.has(other.label)) continue;
+          const ex = other.cx - grpBlob.cx, ey = other.cy - grpBlob.cy;
+          const crossDist = Math.abs(ex*bx + ey*by);
+          const axDist    = Math.abs(ex*ax + ey*ay);
+          // Dichtbij in dwarsrichting, niet ver in lengterichting → grid-buur
+          if (crossDist > 2 && crossDist < meanSp * 1.8 && axDist < meanSp * 0.6) {
+            crossNeighborCount++;
+            break; // één buur per pad telt
+          }
+        }
+      }
+      // Isolatiefactor: 0 cross-buren → 1.0; ≥3 cross-buren → 0.1 (waarschijnlijk kaart)
+      const isolationFactor = Math.max(0.1, 1 - crossNeighborCount / 3);
+
+      const score = regularity * 4 * isolationFactor;
       if (score > bestScore) {
         bestScore = score;
         bestResult = { padBlobs: grp, ax, ay, meanSp, b1 };
@@ -2021,12 +2045,21 @@ async function autoDetect() {
     const { labels, count } = labelComponents(satMask, dw, dh);
     const blobs50 = buildBlobs(labels, imgData, dw, dh, count);
 
-    // RANSAC: vind strip van 4 regelmatige pads
-    const stripResult50 = ransacFindStrip(blobs50, dw, dh);
-    const stripBlobLabels = new Set(stripResult50 ? stripResult50.padBlobs.map(b => b.label) : []);
+    // ── VOLGORDE: kaart eerst (2D grid = unieke structuur),
+    //             dan strip op resterende blobs ──────────────────
+    // Stap 1: kaart detectie op alle blobs (geen uitsluiting)
+    const chartResult50 = detectChartGrid(blobs50, new Set(), dw, dh);
 
-    // Kaart-grid detectie (zonder strip-blobs)
-    const chartResult50 = detectChartGrid(blobs50, stripBlobLabels, dw, dh);
+    // Stap 2: kaart-blob labels verzamelen zodat RANSAC ze overslaat
+    const chartBlobLabels = new Set();
+    if (chartResult50) {
+      for (const row of chartResult50.rowBlobs)
+        for (const b of row) chartBlobLabels.add(b.label);
+    }
+
+    // Stap 3: RANSAC op niet-kaart-blobs → 4 collineaire pads = strip
+    const stripResult50 = ransacFindStrip(blobs50, dw, dh, chartBlobLabels);
+    const stripBlobLabels = new Set(stripResult50 ? stripResult50.padBlobs.map(b => b.label) : []);
 
     // Schaal terug naar full-res
     const sb = 1 / scale;
