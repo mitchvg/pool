@@ -310,6 +310,7 @@ try {
         $action === 'save_visit'      && $method === 'POST' => saveVisit(),
         $action === 'upload_photo'    && $method === 'POST' => uploadPhoto(),
         $action === 'ai_strip'        && $method === 'POST' => aiStrip(),
+        $action === 'get_advice'      && $method === 'POST' => getAdvice(),
         $action === 'get_user'        && $method === 'GET'  => getUser(),
 
         // Admin auth
@@ -527,48 +528,63 @@ function aiStrip(): void {
     if (!$b64) respond(['error' => 'Geen afbeelding'], 400);
 
     $prompt = <<<'PROMPT'
-You are reading a pool water test strip. The photo contains:
-1. A narrow plastic TEST STRIP with exactly 4 small square colored reaction pads
-2. A COLOR REFERENCE CHART (printed grid on the bottle/package) with labeled color squares
+You are analyzing a pool water test strip photo.
 
-═══ STEP 1: LOCATE THE STRIP ═══
-Find the thin white plastic strip. It has 4 colored pads in a row and a handle (blank white end with no pad).
+═══ STEP 1: FIND THE TEST STRIP ═══
+The test strip is a narrow white or light plastic stick with exactly 4 small colored square reaction pads and one blank white end (the handle).
+  • Width: roughly 3–8% of the image width or height (it is NARROW)
+  • The strip and the bottle are SEPARATE objects — they are NOT touching
+  • The strip may be anywhere in the image — edges, corners, far from the bottle
+  • The strip may be vertical, horizontal, or at an angle
+  • Search the ENTIRE image for the narrow strip before looking at the bottle
 
-═══ STEP 2: PAD ORDER ═══
-The handle end has no color pad — just white plastic.
-• Handle at BOTTOM → pads top-to-bottom: pH · Chlorine · Alkalinity · Stabilizer
-• Handle at TOP    → pads top-to-bottom: Stabilizer · Alkalinity · Chlorine · pH
-(The stabilizer pad is always adjacent to the handle.)
+First, output strip_bbox: the tight bounding box around the ENTIRE strip (all 4 pads + handle).
 
-═══ STEP 3: LOCATE EACH PAD PRECISELY ═══
-The strip is narrow (≈1–2 cm wide). Each pad occupies roughly 1/4 of the strip length.
-For each pad, give its tight bounding box on the strip (do NOT include neighboring pads).
+Then identify the blank white HANDLE end (no colored pad, just white plastic).
+Pad order counting outward from the handle:
+  pad 1 (nearest handle)  = STABILIZER
+  pad 2                   = TOTAL ALKALINITY
+  pad 3                   = FREE CHLORINE
+  pad 4 (farthest handle) = pH (END PAD)
 
-═══ STEP 4: MATCH COLORS TO REFERENCE CHART ═══
-The reference chart has separate columns/rows for each parameter:
-• pH        — shades of orange/tan: 6.2(yellow-orange) → 7.2-7.6(medium orange) → 8.4(reddish-tan)
-• Chlorine  — white(0) → barely-pink(0.5) → light-pink(1) → pink(3) → dark-pink/red(5-10 ppm)
-• Alkalinity— yellow(0) → light-olive(40-80) → medium-green(120) → dark-green(180-240 ppm)
-• Stabilizer— white/clear(0) → very-faint-lavender(30) → light-purple(100) → dark-purple(300 ppm)
+For each pad give a tight pad_bbox covering ONLY that single pad — not the neighboring pad, not the white strip body.
 
-Find the color square in the chart that BEST matches the pad. Give a tight crop of THAT SINGLE SQUARE.
+═══ STEP 2: FIND THE REFERENCE CHART ═══
+The Aquachek color reference chart is printed on the bottle or packaging. It has 4 labeled parameter sections.
+The bottle may be upright, rotated 90°, or rotated 180° (upside down) — read the labels regardless of orientation.
+Identify it by the labels: "pH (END PAD)", "ppm FREE CHLORINE", "ppm TOTAL ALKALINITY", "ppm STABILIZER (PAD NEAREST HANDLE)".
+
+Each parameter section is a row (or column if chart is rotated 90°) of colored cells with numeric values:
+  pH row:         5 cells — 6.2  6.8  7.2  7.8  8.4
+  Chlorine row:   6 cells — 0  0.5  1  3  5  10
+  Alkalinity row: 6 cells — 0  40  80  120  180  240
+  Stabilizer row: 5 cells — 0  30-50  100  150  300
+
+For each parameter:
+1. Note the pad's actual color exactly as it appears in the photo
+2. Locate the correct labeled row (or column) in the reference chart
+3. Return ref_row_bbox: the bounding box covering the ENTIRE row/column (all cells together, no labels)
+4. Find the cell in that row whose color most closely matches the pad color
+5. Use the numeric value printed on that cell as the measured value
 
 ═══ OUTPUT ═══
-Return ONLY valid JSON, no markdown, no explanatory text:
+Return ONLY valid JSON — no markdown, no extra text:
 {
-  "ph":         { "value": 7.4, "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "medium orange-tan matches 7.4" },
-  "chlorine":   { "value": 1.0, "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "very light pink ≈ 1 ppm" },
-  "alkalinity": { "value": 80,  "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "olive-green matches 80 ppm" },
-  "stabilizer": { "value": 40,  "pad_bbox": [x1,y1,x2,y2], "ref_bbox": [x1,y1,x2,y2], "reasoning": "faint lavender ≈ 40 ppm" }
+  "strip_bbox": [x1,y1,x2,y2],
+  "ph":         { "value": 7.2, "pad_bbox": [x1,y1,x2,y2], "ref_row_bbox": [x1,y1,x2,y2], "reasoning": "orange-tan pad best matches 7.2 cell" },
+  "chlorine":   { "value": 1.0, "pad_bbox": [x1,y1,x2,y2], "ref_row_bbox": [x1,y1,x2,y2], "reasoning": "very light lavender matches 1 ppm cell" },
+  "alkalinity": { "value": 80,  "pad_bbox": [x1,y1,x2,y2], "ref_row_bbox": [x1,y1,x2,y2], "reasoning": "olive-green matches 80 ppm cell" },
+  "stabilizer": { "value": 40,  "pad_bbox": [x1,y1,x2,y2], "ref_row_bbox": [x1,y1,x2,y2], "reasoning": "golden-yellow matches 30-50 IDEAL cell" }
 }
-All bbox values are % of the FULL image (0–100). x1<x2, y1<y2.
-Each pad_bbox must cover ONLY that one pad, not the whole strip.
-Each ref_bbox must cover ONLY the single matching color cell in the chart.
+All bbox values are % of the FULL image dimensions (0–100). x1<x2, y1<y2.
+strip_bbox: tight box around the whole strip including all pads and handle.
+pad_bbox: tight box around ONE pad only — must be INSIDE strip_bbox.
+ref_row_bbox: tight box around ALL cells in the parameter's chart row/column (no text labels, just the color cells).
 PROMPT;
 
     $payload = json_encode([
         'model'      => 'claude-opus-4-5-20251101',
-        'max_tokens' => 600,
+        'max_tokens' => 2000,
         'messages'   => [[
             'role'    => 'user',
             'content' => [
@@ -600,22 +616,23 @@ PROMPT;
 
     // Valideer en saniteer waarden
     respond([
-        'ph'        => ['value' => min(9, max(6, round((float)($v['ph']['value'] ?? 7.4), 1))),
-                        'pad_bbox' => $v['ph']['pad_bbox'] ?? null,
-                        'ref_bbox' => $v['ph']['ref_bbox'] ?? null,
-                        'reasoning' => $v['ph']['reasoning'] ?? ''],
-        'chlorine'  => ['value' => min(10, max(0, round((float)($v['chlorine']['value'] ?? 1.5), 1))),
-                        'pad_bbox' => $v['chlorine']['pad_bbox'] ?? null,
-                        'ref_bbox' => $v['chlorine']['ref_bbox'] ?? null,
-                        'reasoning' => $v['chlorine']['reasoning'] ?? ''],
-        'alkalinity'=> ['value' => min(300, max(0, (int)($v['alkalinity']['value'] ?? 100))),
-                        'pad_bbox' => $v['alkalinity']['pad_bbox'] ?? null,
-                        'ref_bbox' => $v['alkalinity']['ref_bbox'] ?? null,
-                        'reasoning' => $v['alkalinity']['reasoning'] ?? ''],
-        'stabilizer'=> ['value' => min(200, max(0, (int)($v['stabilizer']['value'] ?? 40))),
-                        'pad_bbox' => $v['stabilizer']['pad_bbox'] ?? null,
-                        'ref_bbox' => $v['stabilizer']['ref_bbox'] ?? null,
-                        'reasoning' => $v['stabilizer']['reasoning'] ?? ''],
+        'strip_bbox' => $v['strip_bbox'] ?? null,
+        'ph'        => ['value'        => min(9,   max(6,   round((float)($v['ph']['value']         ?? 7.4), 1))),
+                        'pad_bbox'     => $v['ph']['pad_bbox']          ?? null,
+                        'ref_row_bbox' => $v['ph']['ref_row_bbox']      ?? null,
+                        'reasoning'    => $v['ph']['reasoning']         ?? ''],
+        'chlorine'  => ['value'        => min(10,  max(0,   round((float)($v['chlorine']['value']   ?? 1.5), 1))),
+                        'pad_bbox'     => $v['chlorine']['pad_bbox']    ?? null,
+                        'ref_row_bbox' => $v['chlorine']['ref_row_bbox'] ?? null,
+                        'reasoning'    => $v['chlorine']['reasoning']   ?? ''],
+        'alkalinity'=> ['value'        => min(300, max(0,   (int)($v['alkalinity']['value']         ?? 100))),
+                        'pad_bbox'     => $v['alkalinity']['pad_bbox']    ?? null,
+                        'ref_row_bbox' => $v['alkalinity']['ref_row_bbox'] ?? null,
+                        'reasoning'    => $v['alkalinity']['reasoning']   ?? ''],
+        'stabilizer'=> ['value'        => min(300, max(0,   (int)($v['stabilizer']['value']         ?? 40))),
+                        'pad_bbox'     => $v['stabilizer']['pad_bbox']    ?? null,
+                        'ref_row_bbox' => $v['stabilizer']['ref_row_bbox'] ?? null,
+                        'reasoning'    => $v['stabilizer']['reasoning']   ?? ''],
     ]);
 }
 
@@ -741,6 +758,16 @@ function buildAdvice(float $ph, float $cl, int $alk, ?float $stab, int $vol): ar
     }
 
     return ['items' => $items];
+}
+
+function getAdvice(): void {
+    $d    = input();
+    $ph   = (float)($d['ph']          ?? 7.4);
+    $cl   = (float)($d['chlorine']    ?? 1.5);
+    $alk  = (int)  ($d['alkalinity']  ?? 100);
+    $stab = isset($d['stabilizer']) && $d['stabilizer'] !== null ? (float)$d['stabilizer'] : null;
+    $vol  = (int)  ($d['volume_liters'] ?? 40000);
+    respond(['advice' => buildAdvice($ph, $cl, $alk, $stab, $vol)]);
 }
 
 // ============================================================

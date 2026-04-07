@@ -128,8 +128,8 @@ async function call(action, method = 'GET', body = null) {
 // ── Boot ──────────────────────────────────────────────────────
 async function boot() {
   const p          = new URLSearchParams(location.search);
-  const userToken  = p.get('m') || getParam('m');
-  const poolToken  = p.get('k') || getParam('k');
+  const userToken  = p.get('m')  || '';
+  const poolToken  = p.get('k')  || '';
   const poolCode   = (p.get('c') || '').toUpperCase();
 
   if (userToken) {
@@ -317,6 +317,11 @@ function buildForm() {
       <div class="fg"><label>Notities</label><textarea id="f-notes" placeholder="Bijzonderheden..."></textarea></div>
     </div>
 
+    <div class="card" id="advice-section" style="display:none">
+      <h2>Advies</h2>
+      <div id="advice-content"></div>
+    </div>
+
     <div class="card">
       <h2>Bevestigingsfoto's</h2>
       <div class="fg"><label>Chemicaliën toegevoegd</label>
@@ -340,8 +345,8 @@ const PARAMS = [
   { key:'ph',         label:'pH',          fid:'f-ph',   min:6.2, max:8.4, step:.1, dec:1, def:7.4,
     cells:[
       {v:6.2,c:'#FF9800',t:'#333'},{v:6.8,c:'#E07030',t:'#fff'},
-      {v:7.2,c:'#D4753A',t:'#fff'},{v:7.6,c:'#C86830',t:'#fff'},
-      {v:7.8,c:'#B05828',t:'#fff'},{v:8.4,c:'#8B3820',t:'#fff'}
+      {v:7.2,c:'#C05830',t:'#fff'},{v:7.8,c:'#A04020',t:'#fff'},
+      {v:8.4,c:'#7A2810',t:'#fff'}
     ]},
   { key:'chlorine',   label:'Chloor (ppm)',fid:'f-cl',   min:0,   max:10,  step:.5, dec:1, def:1.5,
     cells:[
@@ -357,19 +362,21 @@ const PARAMS = [
     ]},
   { key:'stabilizer', label:'Stabilizer',  fid:'f-stab', min:0,   max:300, step:1,  dec:0, def:50,
     cells:[
-      {v:0,  c:'#F8F8FF',t:'#999'},{v:30, c:'#EED8F8',t:'#333'},
-      {v:50, c:'#D8B0EE',t:'#333'},{v:100,c:'#B070D8',t:'#fff'},
-      {v:150,c:'#8840B0',t:'#fff'},{v:300,c:'#4C1878',t:'#fff'}
+      {v:0,  c:'#F8F8FF',t:'#999'},{v:40, c:'#EED8F8',t:'#333'},
+      {v:100,c:'#B070D8',t:'#fff'},{v:150,c:'#8840B0',t:'#fff'},
+      {v:300,c:'#4C1878',t:'#fff'}
     ]},
 ];
 
 function paramCard(p) {
-  const v   = p.def;
-  const pct = ((v - p.min) / (p.max - p.min) * 100).toFixed(1);
-  const cells = p.cells.map(c =>
-    `<div class="ref-cell" style="background:${c.c}" title="${c.v}">
-       <span class="ref-cell-val" style="color:${c.t}">${c.v}</span>
-     </div>`
+  const v = p.def;
+  const gradStops = p.cells.map(c =>
+    `${c.c} ${((c.v - p.min) / (p.max - p.min) * 100).toFixed(1)}%`
+  ).join(', ');
+  const refCells = p.cells.map((c, i) =>
+    `<canvas id="crc-${p.key}-${i}" width="32" height="28"
+       style="border-radius:4px;border:2px solid transparent;flex-shrink:0"
+       title="${c.v}"></canvas>`
   ).join('');
   return `<div class="strip-param">
     <div class="strip-param-label">${p.label}</div>
@@ -378,9 +385,12 @@ function paramCard(p) {
       <span>Jouw strip</span>
     </div>
     <div class="strip-param-val" id="vv-${p.key}">${v.toFixed(p.dec)}</div>
-    <div class="ref-cells">${cells}</div>
+    <div id="rw-${p.key}" style="display:none;gap:3px;flex-wrap:wrap;justify-content:center;margin-bottom:4px">
+      ${refCells}
+      <div style="font-size:9px;color:var(--t3);width:100%;text-align:center">Kleurentabel</div>
+    </div>
     <input type="range" id="sl-${p.key}" min="${p.min}" max="${p.max}" step="${p.step}" value="${v}"
-      style="background:linear-gradient(to right,var(--g) ${pct}%,var(--bd) ${pct}%)"
+      style="background:linear-gradient(to right,${gradStops})"
       oninput="onSlider('${p.key}',${p.dec},'${p.fid}')">
     <div class="strip-reasoning" id="rz-${p.key}"></div>
   </div>`;
@@ -392,25 +402,18 @@ function applyAIToSliders(d) {
     const r = d[p.key];
     if (!r) return;
     const v = r.value;
-    // Slider + waarde
     const sl = document.getElementById('sl-' + p.key);
-    if (sl) {
-      sl.value = v;
-      const pct = ((v - parseFloat(sl.min)) / (parseFloat(sl.max) - parseFloat(sl.min)) * 100).toFixed(1);
-      sl.style.background = `linear-gradient(to right,var(--g) ${pct}%,var(--bd) ${pct}%)`;
-    }
+    if (sl) sl.value = v;
     const vd = document.getElementById('vv-' + p.key);
     if (vd) vd.textContent = v.toFixed(p.dec);
     setVal(p.fid, v.toFixed(p.dec));
-    // Redenering
     const rz = document.getElementById('rz-' + p.key);
     if (rz) rz.textContent = r.reasoning || '';
-    // Toon strip-pad crop
     const pw = document.getElementById('pw-' + p.key);
     if (pw) pw.style.display = 'block';
   });
-  // Teken crops nadat AI_IMG geladen is
   PARAMS.forEach(p => doCrop(p.key));
+  showAdvice();
 }
 
 // ── Strip foto + AI ───────────────────────────────────────────
@@ -446,19 +449,54 @@ async function onStripPhoto(input) {
 function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
 
 function onSlider(key, dec, fid) {
-  const sl  = document.getElementById('sl-' + key);
-  const v   = parseFloat(sl.value);
-  const pct = Math.round((v - parseFloat(sl.min)) / (parseFloat(sl.max) - parseFloat(sl.min)) * 100);
-  sl.style.background = `linear-gradient(to right,var(--g) ${pct}%,var(--bd) ${pct}%)`;
+  const sl = document.getElementById('sl-' + key);
+  const v  = parseFloat(sl.value);
   document.getElementById('vv-' + key).textContent = v.toFixed(dec);
   setVal(fid, v.toFixed(dec));
+  clearTimeout(window._adviceTimer);
+  window._adviceTimer = setTimeout(showAdvice, 700);
+}
+
+function bboxOverlaps(a, b) {
+  return a && b && a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
 }
 
 function doCrop(key) {
   if (!AI_IMG?.complete || !AI_RESULT) return;
   const r = AI_RESULT[key];
-  if (!r?.pad_bbox) return;
-  cropCanvas('cp-' + key, r.pad_bbox);
+  const p = PARAMS.find(x => x.key === key);
+  if (!p) return;
+
+  if (r?.pad_bbox && bboxOverlaps(r.pad_bbox, AI_RESULT.strip_bbox)) {
+    cropCanvas('cp-' + key, r.pad_bbox);
+    const pw = document.getElementById('pw-' + key);
+    if (pw) pw.style.display = 'block';
+  }
+
+  if (r?.ref_row_bbox) {
+    const n = p.cells.length;
+    const [x1, y1, x2, y2] = r.ref_row_bbox;
+    const rowW = x2 - x1, rowH = y2 - y1;
+    const vertical = rowH > rowW;
+
+    const val = r.value ?? 0;
+    let bestIdx = 0, bestDist = Infinity;
+    p.cells.forEach((c, i) => {
+      const d = Math.abs(c.v - val);
+      if (d < bestDist) { bestDist = d; bestIdx = i; }
+    });
+
+    for (let i = 0; i < n; i++) {
+      const bbox = vertical
+        ? [x1, y1 + i*(rowH/n), x2, y1 + (i+1)*(rowH/n)]
+        : [x1 + i*(rowW/n), y1, x1 + (i+1)*(rowW/n), y2];
+      cropCanvas('crc-' + key + '-' + i, bbox);
+      const cv = document.getElementById('crc-' + key + '-' + i);
+      if (cv) cv.style.border = (i === bestIdx) ? '2px solid var(--g)' : '2px solid transparent';
+    }
+    const rw = document.getElementById('rw-' + key);
+    if (rw) rw.style.display = 'flex';
+  }
 }
 
 function cropCanvas(id, bbox) {
@@ -501,6 +539,29 @@ function toB64(file) {
     reader.onerror = rej;
     reader.readAsDataURL(file);
   });
+}
+
+// ── Advies ────────────────────────────────────────────────────
+async function showAdvice() {
+  const ph   = parseFloat(document.getElementById('f-ph')?.value);
+  const cl   = parseFloat(document.getElementById('f-cl')?.value);
+  const alk  = parseInt(document.getElementById('f-alk')?.value);
+  const stab = document.getElementById('f-stab')?.value || null;
+  const vol  = parseInt(document.getElementById('f-vol')?.value) || 40000;
+  if (isNaN(ph) || isNaN(cl) || isNaN(alk)) return;
+  try {
+    const d = await call('get_advice', 'POST', {
+      ph, chlorine: cl, alkalinity: alk,
+      stabilizer: stab ? parseFloat(stab) : null,
+      volume_liters: vol
+    });
+    const section = document.getElementById('advice-section');
+    const content = document.getElementById('advice-content');
+    if (!section || !content) return;
+    const html = adviceHtml(d.advice);
+    content.innerHTML = html || '<div class="advice ok"><div class="advice-title">Alles in orde</div><div class="advice-body">Waterwaarden zijn goed.</div></div>';
+    section.style.display = '';
+  } catch(e) { /* silently ignore */ }
 }
 
 // ── Bezoek opslaan ────────────────────────────────────────────
