@@ -85,6 +85,23 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 .tabs{display:flex;background:#f0f0ee;border-radius:var(--rs);padding:3px;margin-bottom:1.25rem;gap:2px}
 .tab{flex:1;padding:8px;text-align:center;font-size:13px;font-weight:600;border-radius:8px;cursor:pointer;border:none;background:none;color:var(--t2)}
 .tab.on{background:var(--s);color:var(--gd);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+/* ROI selection */
+.roi-btn-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center}
+.roi-btn{padding:7px 12px;font-size:12px;font-weight:700;border:2px solid;border-radius:8px;cursor:pointer;background:transparent;flex:1;min-width:80px;transition:all .15s}
+.roi-btn.strip{border-color:#c89600;color:#c89600}
+.roi-btn.strip.active,.roi-btn.strip:hover{background:#c89600;color:#fff}
+.roi-btn.strip.done{background:#c89600;color:#fff}
+.roi-btn.chart{border-color:#009eb0;color:#009eb0}
+.roi-btn.chart.active,.roi-btn.chart:hover{background:#009eb0;color:#fff}
+.roi-btn.chart.done{background:#009eb0;color:#fff}
+button:disabled{opacity:.4;cursor:default}
+/* Debug panel */
+details summary{cursor:pointer;font-size:11px;color:var(--t3);padding:3px 0;user-select:none}
+.dbg-row{margin-bottom:10px}
+.dbg-row-title{font-size:10px;font-weight:700;color:var(--t2);margin-bottom:4px}
+.dbg-cells{display:flex;gap:4px;flex-wrap:wrap;align-items:flex-end}
+.dbg-cell{text-align:center;font-size:7.5px;color:var(--t3);line-height:1.35}
+.dbg-cell canvas{display:block;border-radius:3px;border:1.5px solid transparent}
 </style>
 </head>
 <body>
@@ -107,6 +124,27 @@ let ZWEMBAD = null;
 let AI_RESULT = null;
 let AI_IMG    = null;
 const extraPhotos = { strip: '', chem: '', pool: '' };
+
+// ── Deterministische analyse globals ─────────────────────────
+let ANALYZE_IMG    = null;   // full-res Image voor pixel sampling
+let DISPLAY_CANVAS = null;   // zichtbare canvas (geschaald)
+let DISPLAY_SCALE  = 1;      // display pixels / image pixels
+let ROI            = { strip: null, chart: null }; // {x1,y1,x2,y2} in IMAGE pixels
+let SEL_MODE       = null;   // 'strip' | 'chart' | null
+let _selDrag       = null;
+let _ANALYSIS_WC   = null;   // herbruikbare work-canvas context
+
+// Aquachek 4-in-1: volgorde referentiekaart rijen (top → bottom op fles)
+// = zelfde volgorde als PARAMS
+const CHART_LAYOUT = [
+  { key:'ph',         cols:5 },
+  { key:'chlorine',   cols:6 },
+  { key:'alkalinity', cols:6 },
+  { key:'stabilizer', cols:5 },
+];
+// Volgorde strip pads (top → bottom, handvat onderaan)
+const STRIP_PAD_ORDER = ['ph','chlorine','alkalinity','stabilizer'];
+const SAMPLE_MARGIN   = 0.2; // 20% marge aan elke kant voor center-crop
 
 // ── URL params + localStorage ─────────────────────────────────
 function getParam(k) {
@@ -299,11 +337,32 @@ function buildForm() {
           <div style="font-size:12px;color:var(--t3);margin-top:2px">Teststrip + kleurenkaart naast elkaar</div>
         </div>
       </div>
+      <div id="roi-ui" style="display:none;margin-top:10px">
+        <div style="position:relative;display:inline-block;max-width:100%" id="roi-wrap">
+          <canvas id="roi-canvas" style="display:block;max-width:100%;border-radius:8px"></canvas>
+          <canvas id="roi-overlay" style="position:absolute;top:0;left:0;border-radius:8px;cursor:crosshair"></canvas>
+        </div>
+        <div class="roi-btn-row">
+          <button class="roi-btn strip" id="roi-btn-strip" onclick="startROI('strip')">📍 Strip</button>
+          <button class="roi-btn chart" id="roi-btn-chart" onclick="startROI('chart')">🎨 Kleurenkaart</button>
+          <button class="btn btn-sm" id="roi-analyse-btn" disabled onclick="runAnalysis()" style="flex:2">Analyseer</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+          <div id="roi-status" style="font-size:11px;color:var(--t3);flex:1">Selecteer de teststrip en de kleurenkaart</div>
+          <label style="font-size:11px;color:var(--t3);cursor:pointer;display:flex;align-items:center;gap:3px;margin:0;white-space:nowrap">
+            <input type="checkbox" id="roi-flip" onchange="renderROIOverlay()" style="width:auto;padding:0"> Omdraaien
+          </label>
+        </div>
+        <details id="debug-details" style="display:none;margin-top:8px">
+          <summary>Debug info (crops + ΔE waarden)</summary>
+          <div id="debug-panel" style="margin-top:6px"></div>
+        </details>
+      </div>
       <div id="ai-status" style="margin-top:.5rem"></div>
     </div>
 
     <div class="card">
-      <h2>Metingen <span id="ai-badge" style="display:none;font-size:11px;font-weight:400;color:var(--g)">✓ via AI — schuif om bij te stellen</span></h2>
+      <h2>Metingen <span id="ai-badge" style="display:none;font-size:11px;font-weight:400;color:var(--g)">✓ Geanalyseerd — schuif om bij te stellen</span></h2>
       <div class="strip-grid">${PARAMS.map(p => paramCard(p)).join('')}</div>
       <input type="hidden" id="f-ph"   value="${PARAMS[0].def}">
       <input type="hidden" id="f-cl"   value="${PARAMS[1].def}">
@@ -429,33 +488,51 @@ function applyAI(d) {
   showAdvice();
 }
 
-// ── Strip foto + AI ───────────────────────────────────────────
+// ── Strip foto laden (geen AI) ────────────────────────────────
 async function onStripPhoto(input) {
   const file = input.files[0];
   if (!file) return;
-  const inner  = document.getElementById('strip-inner');
-  const status = document.getElementById('ai-status');
-  inner.innerHTML  = '<div class="sp"></div><div style="font-size:12px;color:var(--t2);margin-top:6px">Uploaden...</div>';
-  status.innerHTML = '';
+  const inner = document.getElementById('strip-inner');
+  inner.innerHTML = '<div class="sp"></div><div style="font-size:12px;color:var(--t2);margin-top:6px">Uploaden...</div>';
   try {
+    // Upload voor opslag (url opslaan voor save_visit)
     const url = await uploadFile(file);
     extraPhotos.strip = url;
-    inner.innerHTML = `<img src="${url}" class="photo-preview">`;
-    status.innerHTML = '<div class="loading-block"><div class="sp"></div><p style="margin-top:6px;font-size:13px">AI analyseert strip...</p></div>';
 
-    const b64 = await toB64(file);
-    const d   = await call('ai_strip', 'POST', { image: b64, type: file.type });
-    AI_RESULT = d;
+    // Laad volledige resolutie voor pixel-sampling
+    const dataUrl = await new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload  = e => res(e.target.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    });
+    ANALYZE_IMG = new Image();
+    ANALYZE_IMG.src = dataUrl;
+    await new Promise(r => { ANALYZE_IMG.onload = r; ANALYZE_IMG.onerror = r; });
 
-    AI_IMG = new Image();
-    AI_IMG.src = url;
-    await new Promise(r => { AI_IMG.onload = r; AI_IMG.onerror = r; });
+    // Initialiseer display canvas
+    const zone    = document.getElementById('strip-zone');
+    const roiUI   = document.getElementById('roi-ui');
+    const canvas  = document.getElementById('roi-canvas');
+    const overlay = document.getElementById('roi-overlay');
+    const maxW    = Math.min(520, (document.getElementById('app').offsetWidth || 400) - 40);
+    DISPLAY_SCALE  = Math.min(1, maxW / ANALYZE_IMG.naturalWidth);
+    canvas.width   = overlay.width  = Math.round(ANALYZE_IMG.naturalWidth  * DISPLAY_SCALE);
+    canvas.height  = overlay.height = Math.round(ANALYZE_IMG.naturalHeight * DISPLAY_SCALE);
+    canvas.getContext('2d').drawImage(ANALYZE_IMG, 0, 0, canvas.width, canvas.height);
+    DISPLAY_CANVAS = canvas;
 
-    status.innerHTML = '';
-    applyAI(d);
+    // Reset staat
+    ROI = { strip: null, chart: null };
+    SEL_MODE = null;
+    _ANALYSIS_WC = null;
+    zone.style.display  = 'none';
+    roiUI.style.display = 'block';
+    document.getElementById('debug-details').style.display = 'none';
+    updateROIStatus();
+    setupROIEvents();
   } catch(e) {
-    inner.innerHTML  = `<div style="color:var(--bad);font-size:13px">Analyseren mislukt: ${esc(e.message)}</div>`;
-    status.innerHTML = '';
+    inner.innerHTML = `<div style="color:var(--bad);font-size:13px">Upload mislukt: ${esc(e.message)}</div>`;
   }
 }
 
@@ -479,6 +556,344 @@ function cropCanvasRect(id, x, y, w, h) {
     Math.round(x), Math.round(y),
     Math.max(1, Math.round(w)), Math.max(1, Math.round(h)),
     0, 0, c.width, c.height);
+}
+
+// ── ROI selectie ──────────────────────────────────────────────
+function startROI(mode) {
+  SEL_MODE = mode;
+  updateROIStatus();
+}
+
+function updateROIStatus() {
+  const status     = document.getElementById('roi-status');
+  const analyseBtn = document.getElementById('roi-analyse-btn');
+  const stripBtn   = document.getElementById('roi-btn-strip');
+  const chartBtn   = document.getElementById('roi-btn-chart');
+  if (!status) return;
+
+  stripBtn.textContent = ROI.strip ? '✓ Strip'        : '📍 Strip';
+  chartBtn.textContent = ROI.chart ? '✓ Kleurenkaart' : '🎨 Kleurenkaart';
+  stripBtn.classList.toggle('done',   !!ROI.strip);
+  chartBtn.classList.toggle('done',   !!ROI.chart);
+  stripBtn.classList.toggle('active', SEL_MODE === 'strip');
+  chartBtn.classList.toggle('active', SEL_MODE === 'chart');
+
+  if      (SEL_MODE === 'strip') status.textContent = 'Teken een rechthoek om de teststrip';
+  else if (SEL_MODE === 'chart') status.textContent = 'Teken een rechthoek om de kleurenkaart op de fles';
+  else if (!ROI.strip)           status.textContent = 'Klik "Strip" en teken een rechthoek om de teststrip';
+  else if (!ROI.chart)           status.textContent = 'Klik "Kleurenkaart" en teken een rechthoek om de kleurenkaart';
+  else                           status.textContent = 'Beide selecties klaar — klik Analyseer';
+
+  const ready = !!(ROI.strip && ROI.chart);
+  analyseBtn.disabled = !ready;
+}
+
+function setupROIEvents() {
+  const overlay = document.getElementById('roi-overlay');
+  if (!overlay || overlay._roiReady) return;
+  overlay._roiReady = true;
+
+  let dragging = false, dragStart = null;
+
+  function getPos(e) {
+    const rect  = overlay.getBoundingClientRect();
+    const touch = e.touches?.[0] ?? e;
+    return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+  }
+  function onDown(e) {
+    if (!SEL_MODE) return;
+    e.preventDefault(); dragging = true; dragStart = getPos(e);
+  }
+  function onMove(e) {
+    if (!dragging) return;
+    e.preventDefault(); renderROIOverlay(dragStart, getPos(e));
+  }
+  function onUp(e) {
+    if (!dragging) return;
+    e.preventDefault(); dragging = false;
+    const pos = getPos(e.changedTouches?.[0] ?? e);
+    const x1 = Math.min(dragStart.x, pos.x), y1 = Math.min(dragStart.y, pos.y);
+    const x2 = Math.max(dragStart.x, pos.x), y2 = Math.max(dragStart.y, pos.y);
+    if (x2 - x1 < 8 || y2 - y1 < 8) return;
+    const s = 1 / DISPLAY_SCALE;
+    ROI[SEL_MODE] = { x1: x1*s, y1: y1*s, x2: x2*s, y2: y2*s };
+    SEL_MODE = null;
+    renderROIOverlay();
+    updateROIStatus();
+  }
+  overlay.addEventListener('mousedown',  onDown);
+  overlay.addEventListener('mousemove',  onMove);
+  overlay.addEventListener('mouseup',    onUp);
+  overlay.addEventListener('touchstart', onDown, {passive:false});
+  overlay.addEventListener('touchmove',  onMove, {passive:false});
+  overlay.addEventListener('touchend',   onUp,   {passive:false});
+}
+
+function renderROIOverlay(dragFrom = null, dragTo = null) {
+  const overlay = document.getElementById('roi-overlay');
+  if (!overlay) return;
+  const ctx = overlay.getContext('2d');
+  const s   = DISPLAY_SCALE;
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+  function fillStroke(rect, stroke, fill) {
+    ctx.strokeStyle = stroke; ctx.fillStyle = fill;
+    ctx.lineWidth = 2; ctx.setLineDash([]);
+    ctx.fillRect(rect.x*s, rect.y*s, rect.w*s, rect.h*s);
+    ctx.strokeRect(rect.x*s, rect.y*s, rect.w*s, rect.h*s);
+  }
+  function toRect(roi) { return { x:roi.x1, y:roi.y1, w:roi.x2-roi.x1, h:roi.y2-roi.y1 }; }
+
+  // Opgeslagen ROI's tekenen
+  if (ROI.strip) fillStroke(toRect(ROI.strip), '#c89600', 'rgba(200,150,0,.08)');
+  if (ROI.chart) fillStroke(toRect(ROI.chart), '#009eb0', 'rgba(0,158,176,.08)');
+
+  // Grid-preview strip
+  if (ROI.strip) {
+    const r = ROI.strip;
+    const vertical = (r.y2-r.y1) >= (r.x2-r.x1);
+    ctx.strokeStyle = 'rgba(200,150,0,.5)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+    for (let i = 1; i < 4; i++) {
+      ctx.beginPath();
+      if (vertical) { const y=(r.y1+(r.y2-r.y1)*i/4)*s; ctx.moveTo(r.x1*s,y); ctx.lineTo(r.x2*s,y); }
+      else          { const x=(r.x1+(r.x2-r.x1)*i/4)*s; ctx.moveTo(x,r.y1*s); ctx.lineTo(x,r.y2*s); }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Grid-preview referentiekaart
+  if (ROI.chart) {
+    const r = ROI.chart;
+    ctx.strokeStyle = 'rgba(0,158,176,.5)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+    for (let i = 1; i < CHART_LAYOUT.length; i++) {
+      const y = (r.y1+(r.y2-r.y1)*i/CHART_LAYOUT.length)*s;
+      ctx.beginPath(); ctx.moveTo(r.x1*s,y); ctx.lineTo(r.x2*s,y); ctx.stroke();
+    }
+    const maxCols = Math.max(...CHART_LAYOUT.map(l=>l.cols));
+    for (let i = 1; i < maxCols; i++) {
+      const x = (r.x1+(r.x2-r.x1)*i/maxCols)*s;
+      ctx.beginPath(); ctx.moveTo(x,r.y1*s); ctx.lineTo(x,r.y2*s); ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Lopende drag
+  if (dragFrom && dragTo && SEL_MODE) {
+    const color = SEL_MODE === 'strip' ? '#c89600' : '#009eb0';
+    const fill  = SEL_MODE === 'strip' ? 'rgba(200,150,0,.1)' : 'rgba(0,158,176,.1)';
+    ctx.strokeStyle = color; ctx.fillStyle = fill;
+    ctx.lineWidth = 2; ctx.setLineDash([6,3]);
+    ctx.fillRect(dragFrom.x, dragFrom.y, dragTo.x-dragFrom.x, dragTo.y-dragFrom.y);
+    ctx.strokeRect(dragFrom.x, dragFrom.y, dragTo.x-dragFrom.x, dragTo.y-dragFrom.y);
+    ctx.setLineDash([]);
+  }
+}
+
+// ── Kleur wiskunde ────────────────────────────────────────────
+function rgbToLab(r, g, b) {
+  function linearize(v) {
+    v /= 255;
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  }
+  const rl = linearize(r), gl = linearize(g), bl = linearize(b);
+  // sRGB → XYZ (D65)
+  const X = rl*0.4124564 + gl*0.3575761 + bl*0.1804375;
+  const Y = rl*0.2126729 + gl*0.7151522 + bl*0.0721750;
+  const Z = rl*0.0193339 + gl*0.1191920 + bl*0.9503041;
+  // XYZ → LAB (D65 witpunt)
+  function f(v) { return v > 0.008856 ? Math.cbrt(v) : 7.787*v + 16/116; }
+  const fx = f(X/0.95047), fy = f(Y/1.00000), fz = f(Z/1.08883);
+  return { L: 116*fy - 16, a: 500*(fx-fy), b: 200*(fy-fz) };
+}
+
+function deltaE(l1, l2) {
+  return Math.sqrt((l1.L-l2.L)**2 + (l1.a-l2.a)**2 + (l1.b-l2.b)**2);
+}
+
+// Gemiddelde RGB+LAB van het MIDDENGEBIED van een cel
+// Geeft ook het exacte sample-rectangle terug (zelfde pixels als berekening)
+function sampleCell(ctx, x, y, w, h) {
+  const m  = SAMPLE_MARGIN;
+  const sx = Math.round(x + w*m),  sy = Math.round(y + h*m);
+  const sw = Math.max(1, Math.round(w*(1-2*m))), sh = Math.max(1, Math.round(h*(1-2*m)));
+  const data = ctx.getImageData(sx, sy, sw, sh).data;
+  let rS=0, gS=0, bS=0, n=0;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i+3] < 128) continue;
+    rS += data[i]; gS += data[i+1]; bS += data[i+2]; n++;
+  }
+  if (!n) return { r:128, g:128, b:128, lab:{L:50,a:0,b:0}, sr:{x:sx,y:sy,w:sw,h:sh} };
+  const r = Math.round(rS/n), g = Math.round(gS/n), b = Math.round(bS/n);
+  return { r, g, b, lab: rgbToLab(r, g, b), sr:{x:sx,y:sy,w:sw,h:sh} };
+}
+
+// ── Hoofdanalyse ──────────────────────────────────────────────
+async function runAnalysis() {
+  if (!ANALYZE_IMG || !ROI.strip || !ROI.chart) return;
+  const status = document.getElementById('ai-status');
+  status.innerHTML = '<div class="loading-block"><div class="sp"></div><p style="margin-top:6px;font-size:13px">Analyseren...</p></div>';
+
+  // Full-res canvas voor getImageData
+  if (!_ANALYSIS_WC) {
+    _ANALYSIS_WC = document.createElement('canvas');
+    _ANALYSIS_WC.width  = ANALYZE_IMG.naturalWidth;
+    _ANALYSIS_WC.height = ANALYZE_IMG.naturalHeight;
+    _ANALYSIS_WC.getContext('2d').drawImage(ANALYZE_IMG, 0, 0);
+  }
+  const wCtx = _ANALYSIS_WC.getContext('2d');
+  const flip  = document.getElementById('roi-flip')?.checked ?? false;
+  const sr    = ROI.strip;
+  const cr    = ROI.chart;
+
+  // Strip pads samplen
+  const stripVert = (sr.y2-sr.y1) >= (sr.x2-sr.x1);
+  const padLen    = stripVert ? (sr.y2-sr.y1)/4 : (sr.x2-sr.x1)/4;
+  const padWidth  = stripVert ? (sr.x2-sr.x1)   : (sr.y2-sr.y1);
+
+  const padSamples = {}, padRects = {};
+  STRIP_PAD_ORDER.forEach((key, i) => {
+    const idx = flip ? (3-i) : i;  // flip: draai volgorde om
+    let px, py, pw, ph;
+    if (stripVert) { px=sr.x1;          py=sr.y1+idx*padLen; pw=sr.x2-sr.x1; ph=padLen; }
+    else           { px=sr.x1+idx*padLen; py=sr.y1;           pw=padLen; ph=sr.y2-sr.y1; }
+    padSamples[key] = sampleCell(wCtx, px, py, pw, ph);
+    padRects[key]   = { x:px, y:py, w:pw, h:ph };
+  });
+
+  // Referentiekaart cellen samplen
+  const rowH = (cr.y2-cr.y1) / CHART_LAYOUT.length;
+  const chartSamples = {}, chartRects = {};
+  CHART_LAYOUT.forEach((row, ri) => {
+    const colW = (cr.x2-cr.x1) / row.cols;
+    const ry   = cr.y1 + ri * rowH;
+    chartSamples[row.key] = [];
+    chartRects[row.key]   = [];
+    for (let ci = 0; ci < row.cols; ci++) {
+      const cx = cr.x1 + ci * colW;
+      chartSamples[row.key].push(sampleCell(wCtx, cx, ry, colW, rowH));
+      chartRects[row.key].push({ x:cx, y:ry, w:colW, h:rowH });
+    }
+  });
+
+  // Vergelijken: pad → referentierij, kleinste ΔE wint
+  const results = {};
+  PARAMS.forEach(p => {
+    const padLab     = padSamples[p.key].lab;
+    const refs       = chartSamples[p.key];
+    let bestIdx = 0, bestDE = Infinity;
+    const allDE = refs.map((ref, i) => {
+      const d = deltaE(padLab, ref.lab);
+      if (d < bestDE) { bestDE = d; bestIdx = i; }
+      return d;
+    });
+    results[p.key] = {
+      value:     p.cells[bestIdx]?.v ?? p.min,
+      bestIdx,   bestDE,
+      padSample: padSamples[p.key], padRect: padRects[p.key],
+      refSamples: refs, chartRects: chartRects[p.key],
+      allDE
+    };
+  });
+
+  status.innerHTML = '';
+
+  // Sliders + markeringen bijwerken (hergebruik applyAI)
+  const vals = {};
+  PARAMS.forEach(p => { vals[p.key] = results[p.key].value; });
+  applyAI(vals);
+
+  // Debug visualisaties
+  renderDebugOverlay(results);
+  renderDebugPanel(results);
+  document.getElementById('debug-details').style.display = 'block';
+}
+
+// ── Debug: overlay op foto ─────────────────────────────────────
+function renderDebugOverlay(results) {
+  const overlay = document.getElementById('roi-overlay');
+  if (!overlay) return;
+  const ctx = overlay.getContext('2d');
+  const s   = DISPLAY_SCALE;
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+  function sRect(sr, stroke, fill) {
+    ctx.strokeStyle = stroke; ctx.fillStyle = fill;
+    ctx.lineWidth = 1.5; ctx.setLineDash([]);
+    ctx.fillRect(sr.x*s, sr.y*s, sr.w*s, sr.h*s);
+    ctx.strokeRect(sr.x*s, sr.y*s, sr.w*s, sr.h*s);
+  }
+
+  PARAMS.forEach(p => {
+    const r = results[p.key];
+    if (!r) return;
+    // Pad cel-kader (zichtbaar gebied)
+    const pr = r.padRect;
+    ctx.strokeStyle='rgba(200,150,0,.4)'; ctx.fillStyle='transparent'; ctx.lineWidth=1; ctx.setLineDash([]);
+    ctx.strokeRect(pr.x*s, pr.y*s, pr.w*s, pr.h*s);
+    // Pad sample-gebied (center crop — zelfde als berekening)
+    sRect(r.padSample.sr, '#c89600', 'rgba(200,150,0,.15)');
+
+    // Referentiecellen
+    r.refSamples.forEach((ref, i) => {
+      const cr  = r.chartRects[i];
+      const best = i === r.bestIdx;
+      ctx.strokeStyle='rgba(0,158,176,.35)'; ctx.fillStyle='transparent'; ctx.lineWidth=1; ctx.setLineDash([]);
+      ctx.strokeRect(cr.x*s, cr.y*s, cr.w*s, cr.h*s);
+      sRect(ref.sr, best ? '#1D9E75' : 'rgba(0,158,176,.7)', best ? 'rgba(29,158,117,.2)' : 'rgba(0,158,176,.06)');
+    });
+  });
+}
+
+// ── Debug: crop-panel ─────────────────────────────────────────
+function renderDebugPanel(results) {
+  const panel = document.getElementById('debug-panel');
+  if (!panel) return;
+
+  const lab2str = l => `L${l.L.toFixed(0)} a${l.a.toFixed(0)} b${l.b.toFixed(0)}`;
+
+  panel.innerHTML = PARAMS.map(p => {
+    const r = results[p.key];
+    if (!r) return '';
+    const val = typeof r.value === 'number' && p.dec === 1 ? r.value.toFixed(1) : r.value;
+    return `<div class="dbg-row">
+      <div class="dbg-row-title">${p.label}: <strong>${val}</strong> (ΔE ${r.bestDE.toFixed(1)})</div>
+      <div class="dbg-cells">
+        <div class="dbg-cell">
+          <canvas id="dbg-pad-${p.key}" width="44" height="36" style="border:1.5px solid #c89600;border-radius:3px;display:block"></canvas>
+          <div>strip pad</div>
+          <div>${r.padSample.r},${r.padSample.g},${r.padSample.b}</div>
+          <div>${lab2str(r.padSample.lab)}</div>
+        </div>
+        <div style="font-size:14px;color:var(--t3);padding-bottom:22px">→</div>
+        ${r.refSamples.map((ref, i) => `
+          <div class="dbg-cell">
+            <canvas id="dbg-ref-${p.key}-${i}" width="36" height="28"
+              style="border:1.5px solid ${i===r.bestIdx?'var(--g)':'transparent'};border-radius:3px;display:block"></canvas>
+            <div>${p.cells[i]?.v ?? ''}</div>
+            <div style="color:${i===r.bestIdx?'var(--g)':'var(--t3)'}">ΔE ${r.allDE[i].toFixed(1)}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  // Crops vullen vanuit de originele foto (zelfde pixels als gebruikt voor berekening)
+  requestAnimationFrame(() => {
+    function cropTo(id, sr) {
+      const c = document.getElementById(id);
+      if (!c) return;
+      c.getContext('2d').drawImage(_ANALYSIS_WC,
+        Math.round(sr.x), Math.round(sr.y),
+        Math.max(1, Math.round(sr.w)), Math.max(1, Math.round(sr.h)),
+        0, 0, c.width, c.height);
+    }
+    PARAMS.forEach(p => {
+      const r = results[p.key];
+      if (!r) return;
+      cropTo('dbg-pad-' + p.key, r.padSample.sr);
+      r.refSamples.forEach((ref, i) => cropTo('dbg-ref-' + p.key + '-' + i, ref.sr));
+    });
+  });
 }
 
 // ── Extra foto's ──────────────────────────────────────────────
