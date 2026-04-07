@@ -106,6 +106,9 @@ details summary{cursor:pointer;font-size:11px;color:var(--t3);padding:3px 0;user
 .dbg-cell canvas{display:block;border-radius:3px;border:1.5px solid transparent}
 #detect-spinner{position:absolute;inset:0;background:rgba(255,255,255,.82);display:none;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;z-index:5;gap:8px}
 #detect-spinner p{font-size:12px;color:var(--t2);margin:0}
+.verif-section{background:#fafaf8;border:1px solid var(--bd);border-radius:8px;padding:.6rem .75rem;margin-bottom:8px}
+.verif-title{font-size:12px;font-weight:700;color:var(--t2);margin-bottom:6px}
+.verif-cells{display:flex;gap:4px;align-items:flex-end;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -157,6 +160,8 @@ let CHART_WARPED_CTX = null;   // offscreen canvas 360×240 (rechtgetrokken kaar
 let AUTO_DETECT_DONE = false;
 const WARPED_STRIP_ROI = { x1:0, y1:0, x2:100, y2:400 };
 const WARPED_CHART_ROI = { x1:0, y1:0, x2:360, y2:240 };
+let STRIP_PAD_BLOBS  = null;  // [{cx,cy,bbox,area}×4]
+let CHART_GRID_BLOBS = null;  // {rowBlobs:[[blob,...],...], corners:{x0,y0,x1,y1}}
 
 // ── URL params + localStorage ─────────────────────────────────
 function getParam(k) {
@@ -384,10 +389,9 @@ function buildForm() {
             <button class="crot-btn"    id="crot3" onclick="setChartRot(3)">◀ Links</button>
           </div>
         </div>
-        <details id="debug-details" style="display:none;margin-top:8px">
-          <summary>Debug info (crops + ΔE waarden)</summary>
+        <div id="debug-details" style="display:none;margin-top:8px">
           <div id="debug-panel" style="margin-top:6px"></div>
-        </details>
+        </div>
       </div>
       <div id="ai-status" style="margin-top:.5rem"></div>
     </div>
@@ -566,6 +570,8 @@ async function onStripPhoto(input) {
     AUTO_DETECT_DONE = false;
     STRIP_WARPED_CTX = null;
     CHART_WARPED_CTX = null;
+    STRIP_PAD_BLOBS  = null;
+    CHART_GRID_BLOBS = null;
     zone.style.display  = 'none';
     roiUI.style.display = 'block';
     document.getElementById('debug-details').style.display = 'none';
@@ -1185,7 +1191,7 @@ function toast(msg, err=false) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// AUTO-DETECTIE: wiskunde, detectoren, warp, orchestratie
+// AUTO-DETECTIE: saturatie-blob RANSAC + live kaart-kalibratie
 // ═══════════════════════════════════════════════════════════════
 
 // ── Lineair stelsel oplossen (Gauss met partiële pivoting) ────
@@ -1279,6 +1285,322 @@ function applyHomography(srcCanvas, dstCtx, dstW, dstH, H) {
     }
   }
   dstCtx.putImageData(dstData, 0, 0);
+}
+
+// ── Saturatiemask ─────────────────────────────────────────────
+function buildSatMask(imgData, w, h, thresh = 0.18) {
+  const d = imgData.data;
+  const mask = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const r = d[i*4], g = d[i*4+1], b = d[i*4+2];
+    const mx = Math.max(r, g, b);
+    const mn = Math.min(r, g, b);
+    const s = mx > 0 ? (mx - mn) / mx : 0;
+    mask[i] = s > thresh ? 1 : 0;
+  }
+  return mask;
+}
+
+// ── Blobs bouwen uit labeled components ──────────────────────
+function buildBlobs(labels, imgData, w, h, count) {
+  const totalPixels = w * h;
+  const minArea = totalPixels * 0.0003; // 0.03%
+  const maxArea = totalPixels * 0.06;   // 6%
+
+  const compCount  = new Int32Array(count);
+  const compSumX   = new Float64Array(count);
+  const compSumY   = new Float64Array(count);
+  const compBBox   = [];
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const L = labels[y*w+x];
+      if (L < 0) continue;
+      compCount[L]++;
+      compSumX[L] += x;
+      compSumY[L] += y;
+      if (!compBBox[L]) compBBox[L] = {x1:x,y1:y,x2:x,y2:y};
+      else {
+        const bb = compBBox[L];
+        if (x < bb.x1) bb.x1 = x; if (x > bb.x2) bb.x2 = x;
+        if (y < bb.y1) bb.y1 = y; if (y > bb.y2) bb.y2 = y;
+      }
+    }
+  }
+
+  const blobs = [];
+  for (let L = 0; L < count; L++) {
+    const area = compCount[L];
+    if (!area || area < minArea || area > maxArea) continue;
+    const bb = compBBox[L];
+    if (!bb) continue;
+    blobs.push({
+      label: L,
+      cx: compSumX[L] / area,
+      cy: compSumY[L] / area,
+      area,
+      bbox: { x1: bb.x1, y1: bb.y1, x2: bb.x2, y2: bb.y2 }
+    });
+  }
+  return blobs;
+}
+
+// ── RANSAC: vind strip van 4 regelmatige blobs op een lijn ────
+function ransacFindStrip(blobs, w, h) {
+  if (blobs.length < 4) return null;
+  const avgBlobR = blobs.reduce((s,b) => s + Math.sqrt(b.area), 0) / blobs.length;
+  const D = 1.5 * avgBlobR;
+  const ITERS = 150;
+
+  let bestResult = null, bestScore = -1;
+
+  for (let iter = 0; iter < ITERS; iter++) {
+    const i1 = Math.floor(Math.random() * blobs.length);
+    let i2 = Math.floor(Math.random() * (blobs.length - 1));
+    if (i2 >= i1) i2++;
+    const b1 = blobs[i1], b2 = blobs[i2];
+    const dx = b2.cx - b1.cx, dy = b2.cy - b1.cy;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if (len < 2) continue;
+    const nx = -dy/len, ny = dx/len; // normal
+
+    // Inliers: within D pixels of line
+    const inliers = blobs.filter(b => {
+      const ex = b.cx - b1.cx, ey = b.cy - b1.cy;
+      return Math.abs(ex*nx + ey*ny) <= D;
+    });
+    if (inliers.length < 3) continue;
+
+    // Sort along axis
+    const ax = dx/len, ay = dy/len;
+    inliers.sort((a, b) => {
+      const ta = (a.cx-b1.cx)*ax + (a.cy-b1.cy)*ay;
+      const tb = (b.cx-b1.cx)*ax + (b.cy-b1.cy)*ay;
+      return ta - tb;
+    });
+
+    // Find best consecutive group of exactly 4
+    for (let start = 0; start <= inliers.length - 4; start++) {
+      const grp = inliers.slice(start, start + 4);
+      const spacings = [];
+      for (let k = 1; k < grp.length; k++) {
+        const ddx = grp[k].cx - grp[k-1].cx, ddy = grp[k].cy - grp[k-1].cy;
+        spacings.push(Math.sqrt(ddx*ddx + ddy*ddy));
+      }
+      const meanSp = spacings.reduce((a,b) => a+b, 0) / spacings.length;
+      if (meanSp < 4) continue;
+      const stdSp = Math.sqrt(spacings.reduce((s,sp) => s + (sp-meanSp)**2, 0) / spacings.length);
+      const regularity = Math.max(0, 1 - stdSp / meanSp);
+      const score = regularity * 4; // 4 = count bonus
+      if (score > bestScore) {
+        bestScore = score;
+        bestResult = { padBlobs: grp, ax, ay, meanSp, b1 };
+      }
+    }
+  }
+
+  if (!bestResult || bestScore < 0.3) return null;
+
+  const { padBlobs, ax, ay, meanSp } = bestResult;
+  const bx = -ay, by = ax; // cross axis
+
+  // Compute strip corners: extend 1×spacing beyond outermost pads
+  const first = padBlobs[0], last = padBlobs[padBlobs.length-1];
+  // Project all pad bboxes to find max cross-width
+  let maxCross = 0;
+  for (const b of padBlobs) {
+    const bbW = b.bbox.x2 - b.bbox.x1;
+    const bbH = b.bbox.y2 - b.bbox.y1;
+    // cross-width: project bbox corners onto cross axis
+    const corners = [
+      {x: b.bbox.x1, y: b.bbox.y1},
+      {x: b.bbox.x2, y: b.bbox.y1},
+      {x: b.bbox.x2, y: b.bbox.y2},
+      {x: b.bbox.x1, y: b.bbox.y2},
+    ];
+    let minC = Infinity, maxC = -Infinity;
+    for (const c of corners) {
+      const proj = c.x*bx + c.y*by;
+      if (proj < minC) minC = proj;
+      if (proj > maxC) maxC = proj;
+    }
+    maxCross = Math.max(maxCross, maxC - minC);
+  }
+  const halfCross = maxCross * 1.5 / 2;
+
+  // Start/end centers extended by 1×spacing
+  const sc = { x: first.cx - ax*meanSp, y: first.cy - ay*meanSp };
+  const ec = { x: last.cx  + ax*meanSp, y: last.cy  + ay*meanSp };
+
+  const corners = [
+    { x: sc.x + bx*halfCross, y: sc.y + by*halfCross },
+    { x: sc.x - bx*halfCross, y: sc.y - by*halfCross },
+    { x: ec.x - bx*halfCross, y: ec.y - by*halfCross },
+    { x: ec.x + bx*halfCross, y: ec.y + by*halfCross },
+  ];
+
+  return { padBlobs, corners };
+}
+
+// ── Kaart-grid detectie via Y-clustering van blobs ────────────
+function detectChartGrid(blobs, stripBlobLabels, w, h) {
+  const filtered = blobs.filter(b => !stripBlobLabels.has(b.label));
+  if (filtered.length < 12) return null; // need at least 3 rows × 4 cols
+
+  // Average blob height
+  const avgBlobH = filtered.reduce((s,b) => s + (b.bbox.y2 - b.bbox.y1), 0) / filtered.length;
+
+  // Y-clustering: sort by cy, group where consecutive |cy diff| < 1.2 × avgBlobHeight
+  const sorted = [...filtered].sort((a,b) => a.cy - b.cy);
+  const rows = [];
+  let curRow = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    if (Math.abs(sorted[i].cy - sorted[i-1].cy) < 1.2 * avgBlobH) {
+      curRow.push(sorted[i]);
+    } else {
+      rows.push(curRow);
+      curRow = [sorted[i]];
+    }
+  }
+  rows.push(curRow);
+
+  // Try all contiguous row subsets of size 3..5
+  let bestResult = null, bestScore = -1;
+
+  for (let rStart = 0; rStart < rows.length; rStart++) {
+    for (let rEnd = rStart + 2; rEnd < Math.min(rows.length, rStart + 5); rEnd++) {
+      const candidateRows = rows.slice(rStart, rEnd + 1);
+      const numRows = candidateRows.length;
+
+      // Each row must have 4..7 blobs
+      if (candidateRows.some(r => r.length < 4 || r.length > 7)) continue;
+
+      // X-regularity within each row
+      let sumXReg = 0;
+      for (const row of candidateRows) {
+        const xs = row.map(b => b.cx).sort((a,b) => a-b);
+        const spacings = [];
+        for (let i = 1; i < xs.length; i++) spacings.push(xs[i] - xs[i-1]);
+        if (!spacings.length) continue;
+        const m = spacings.reduce((a,b) => a+b, 0) / spacings.length;
+        if (m < 2) continue;
+        const std = Math.sqrt(spacings.reduce((s,v) => s + (v-m)**2, 0) / spacings.length);
+        sumXReg += Math.max(0, 1 - std/m);
+      }
+      const xReg = sumXReg / numRows;
+      if (xReg < 0.3) continue;
+
+      // Y-regularity between rows (row cy spacings)
+      const rowCys = candidateRows.map(r => r.reduce((s,b) => s+b.cy, 0) / r.length);
+      const ySpacings = [];
+      for (let i = 1; i < rowCys.length; i++) ySpacings.push(rowCys[i] - rowCys[i-1]);
+      const yMean = ySpacings.reduce((a,b) => a+b, 0) / ySpacings.length;
+      if (yMean < 2) continue;
+      const yStd = Math.sqrt(ySpacings.reduce((s,v) => s + (v-yMean)**2, 0) / ySpacings.length);
+      const yReg = Math.max(0, 1 - yStd/yMean);
+      if (yReg < 0.3) continue;
+
+      const totalCells = candidateRows.reduce((s,r) => s + r.length, 0);
+      const score = totalCells * xReg * yReg;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestResult = candidateRows;
+      }
+    }
+  }
+
+  if (!bestResult) return null;
+
+  // Compute bounding rect of all blobs in winning rows
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const row of bestResult) {
+    for (const b of row) {
+      if (b.bbox.x1 < x0) x0 = b.bbox.x1;
+      if (b.bbox.y1 < y0) y0 = b.bbox.y1;
+      if (b.bbox.x2 > x1) x1 = b.bbox.x2;
+      if (b.bbox.y2 > y1) y1 = b.bbox.y2;
+    }
+  }
+
+  // Sort each row left→right
+  for (const row of bestResult) row.sort((a,b) => a.cx - b.cx);
+
+  return {
+    rowBlobs: bestResult,
+    corners: { x0, y0, x1, y1 }
+  };
+}
+
+// ── Gemiddelde LAB van blob (alleen gekleurde pixels) ─────────
+function blobAvgLab(blob, imgData, w, satThresh = 0.18) {
+  const d = imgData.data;
+  const { x1, y1, x2, y2 } = blob.bbox;
+  let rS = 0, gS = 0, bS = 0, n = 0;
+  let rAll = 0, gAll = 0, bAll = 0, nAll = 0;
+  for (let y = Math.max(0, y1); y <= Math.min(imgData.height - 1, y2); y++) {
+    for (let x = Math.max(0, x1); x <= Math.min(imgData.width - 1, x2); x++) {
+      const i = (y * w + x) * 4;
+      const r = d[i], g = d[i+1], b = d[i+2];
+      rAll += r; gAll += g; bAll += b; nAll++;
+      const mx = Math.max(r, g, b);
+      const mn = Math.min(r, g, b);
+      const s = mx > 0 ? (mx - mn) / mx : 0;
+      if (s > satThresh) { rS += r; gS += g; bS += b; n++; }
+    }
+  }
+  const useColored = n > 0;
+  const rAvg = useColored ? Math.round(rS/n) : (nAll ? Math.round(rAll/nAll) : 128);
+  const gAvg = useColored ? Math.round(gS/n) : (nAll ? Math.round(gAll/nAll) : 128);
+  const bAvg = useColored ? Math.round(bS/n) : (nAll ? Math.round(bAll/nAll) : 128);
+  return {
+    r: rAvg, g: gAvg, b: bAvg,
+    lab: rgbToLab(rAvg, gAvg, bAvg),
+    sr: { x: x1, y: y1, w: x2-x1, h: y2-y1 }
+  };
+}
+
+// ── Live kaart opbouwen met rotatie-correctie ─────────────────
+function buildLiveChart(rowBlobs, chartRot) {
+  // rowBlobs[0..3] zijn de 4 gedetecteerde rijen (al gesorteerd links→rechts)
+  // CHART_ROT bepaalt welke rij = pH etc. en rijvolgorde
+  //   0: rijen top→bottom = pH,Cl,Alk,Stab; cols left→right
+  //   1: rijen in beeld links→rechts = pH,Cl,Alk,Stab; cols top→bottom
+  //   2: rijen bottom→top = pH,Cl,Alk,Stab; cols right→left
+  //   3: rijen right→left = pH,Cl,Alk,Stab; cols bottom→top
+
+  const nRows = rowBlobs.length;
+  const keys = ['ph', 'chlorine', 'alkalinity', 'stabilizer'];
+  const result = {};
+
+  switch (chartRot % 4) {
+    case 0: // rijen al top→bottom, cols al left→right
+      for (let i = 0; i < Math.min(nRows, 4); i++) {
+        result[keys[i]] = [...rowBlobs[i]]; // already left→right
+      }
+      break;
+    case 1: // rijen (beeld-x) links→rechts = pH..Stab; cols top→bottom
+      // Reinterpret: "rows" are blob columns in the image (vertical groups)
+      // We treat rowBlobs as columns sorted by x, blobs within sorted by y
+      for (let i = 0; i < Math.min(nRows, 4); i++) {
+        result[keys[i]] = [...rowBlobs[i]].sort((a,b) => a.cy - b.cy);
+      }
+      break;
+    case 2: // rijen bottom→top = pH..Stab; cols right→left
+      for (let i = 0; i < Math.min(nRows, 4); i++) {
+        const srcRow = rowBlobs[nRows - 1 - i];
+        result[keys[i]] = [...srcRow].reverse(); // right→left becomes left→right reversed
+      }
+      break;
+    case 3: // rijen right→left = pH..Stab; cols bottom→top
+      for (let i = 0; i < Math.min(nRows, 4); i++) {
+        const srcRow = rowBlobs[nRows - 1 - i];
+        result[keys[i]] = [...srcRow].sort((a,b) => b.cy - a.cy);
+      }
+      break;
+  }
+
+  return result;
 }
 
 // ── Strip detectie: helder masker + connected components + PCA ─
@@ -1593,7 +1915,7 @@ function detectChart(imgData, w, h) {
 }
 
 // ── Detectie overlay op foto tekenen ─────────────────────────
-function showDetectionOverlay(stripCorners, chartCorners) {
+function showDetectionOverlay(stripPadBlobs, chartRowBlobs, stripCorners, chartCorners) {
   const overlay = document.getElementById('roi-overlay');
   if (!overlay) return;
   const ctx = overlay.getContext('2d');
@@ -1608,8 +1930,38 @@ function showDetectionOverlay(stripCorners, chartCorners) {
     ctx.strokeStyle=stroke; ctx.lineWidth=2.5; ctx.fillStyle=fill;
     ctx.fill(); ctx.stroke();
   }
+
+  // Draw warp quadrilaterals
   if (stripCorners) drawPoly(stripCorners, '#c89600', 'rgba(200,150,0,.12)');
-  if (chartCorners) drawPoly(chartCorners, '#009eb0', 'rgba(0,158,176,.12)');
+  if (chartCorners && chartCorners.length === 4) drawPoly(chartCorners, '#009eb0', 'rgba(0,158,176,.12)');
+  else if (chartCorners && chartCorners.x0 !== undefined) {
+    const cc = chartCorners;
+    const pts = [{x:cc.x0,y:cc.y0},{x:cc.x1,y:cc.y0},{x:cc.x1,y:cc.y1},{x:cc.x0,y:cc.y1}];
+    drawPoly(pts, '#009eb0', 'rgba(0,158,176,.12)');
+  }
+
+  // Yellow circles on 4 strip pad centers
+  if (stripPadBlobs && stripPadBlobs.length) {
+    ctx.strokeStyle = '#c89600'; ctx.lineWidth = 2.5; ctx.fillStyle = 'rgba(200,150,0,.25)';
+    for (const b of stripPadBlobs) {
+      const r = Math.sqrt(b.area * s * s) / 2;
+      ctx.beginPath();
+      ctx.arc(b.cx * s, b.cy * s, Math.max(6, r), 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+    }
+  }
+
+  // Cyan dots on all chart cell centers
+  if (chartRowBlobs) {
+    ctx.fillStyle = '#009eb0';
+    for (const row of chartRowBlobs) {
+      for (const b of row) {
+        ctx.beginPath();
+        ctx.arc(b.cx * s, b.cy * s, 4, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
 }
 
 // ── Detectie mislukt: toon foutmelding + fallback knop ────────
@@ -1631,6 +1983,8 @@ function enableManualROI() {
   AUTO_DETECT_DONE = false;
   STRIP_WARPED_CTX = null;
   CHART_WARPED_CTX = null;
+  STRIP_PAD_BLOBS  = null;
+  CHART_GRID_BLOBS = null;
   ROI = { strip: null, chart: null };
 
   const fallback  = document.getElementById('manual-fallback-btn');
@@ -1644,7 +1998,7 @@ function enableManualROI() {
   renderROIOverlay();
 }
 
-// ── Hoofdorchestrator auto-detectie ──────────────────────────
+// ── Hoofdorchestrator auto-detectie (saturatie-blob) ─────────
 async function autoDetect() {
   if (!ANALYZE_IMG) return;
   const spinner = document.getElementById('detect-spinner');
@@ -1658,24 +2012,61 @@ async function autoDetect() {
     const dw = Math.round(ANALYZE_IMG.naturalWidth  * scale);
     const dh = Math.round(ANALYZE_IMG.naturalHeight * scale);
     const tmp = document.createElement('canvas');
-    tmp.width=dw; tmp.height=dh;
+    tmp.width = dw; tmp.height = dh;
     tmp.getContext('2d').drawImage(ANALYZE_IMG, 0, 0, dw, dh);
     const imgData = tmp.getContext('2d').getImageData(0, 0, dw, dh);
 
-    const strip50 = detectStrip(imgData, dw, dh);
-    const chart50 = detectChart(imgData, dw, dh);
+    // Saturatiemask → label components → blobs
+    const satMask = buildSatMask(imgData, dw, dh, 0.18);
+    const { labels, count } = labelComponents(satMask, dw, dh);
+    const blobs50 = buildBlobs(labels, imgData, dw, dh, count);
 
-    const sb = 1/scale;
-    const stripCorners = strip50 ? strip50.map(p=>({x:p.x*sb,y:p.y*sb})) : null;
-    const chartCorners = chart50 ? chart50.map(p=>({x:p.x*sb,y:p.y*sb})) : null;
+    // RANSAC: vind strip van 4 regelmatige pads
+    const stripResult50 = ransacFindStrip(blobs50, dw, dh);
+    const stripBlobLabels = new Set(stripResult50 ? stripResult50.padBlobs.map(b => b.label) : []);
 
-    // Toon gedetecteerde contouren (ook bij gedeeltelijk resultaat)
-    showDetectionOverlay(stripCorners, chartCorners);
+    // Kaart-grid detectie (zonder strip-blobs)
+    const chartResult50 = detectChartGrid(blobs50, stripBlobLabels, dw, dh);
 
-    if (!stripCorners && !chartCorners) {
-      showDetectionFailure(true, true);
-      return;
+    // Schaal terug naar full-res
+    const sb = 1 / scale;
+
+    let stripPadBlobs = null, stripCorners = null;
+    if (stripResult50) {
+      stripPadBlobs = stripResult50.padBlobs.map(b => ({
+        label: b.label,
+        cx: b.cx * sb, cy: b.cy * sb,
+        area: b.area * sb * sb,
+        bbox: { x1: b.bbox.x1*sb, y1: b.bbox.y1*sb, x2: b.bbox.x2*sb, y2: b.bbox.y2*sb }
+      }));
+      stripCorners = stripResult50.corners.map(p => ({ x: p.x*sb, y: p.y*sb }));
     }
+
+    let chartRowBlobs = null, chartCorners = null;
+    if (chartResult50) {
+      chartRowBlobs = chartResult50.rowBlobs.map(row =>
+        row.map(b => ({
+          label: b.label,
+          cx: b.cx * sb, cy: b.cy * sb,
+          area: b.area * sb * sb,
+          bbox: { x1: b.bbox.x1*sb, y1: b.bbox.y1*sb, x2: b.bbox.x2*sb, y2: b.bbox.y2*sb }
+        }))
+      );
+      const cc = chartResult50.corners;
+      chartCorners = { x0: cc.x0*sb, y0: cc.y0*sb, x1: cc.x1*sb, y1: cc.y1*sb };
+    }
+
+    // Sla full-res blobs op in globals
+    STRIP_PAD_BLOBS  = stripPadBlobs;
+    CHART_GRID_BLOBS = chartRowBlobs ? { rowBlobs: chartRowBlobs, corners: chartCorners } : null;
+
+    // Toon overlay
+    showDetectionOverlay(
+      STRIP_PAD_BLOBS,
+      CHART_GRID_BLOBS ? CHART_GRID_BLOBS.rowBlobs : null,
+      stripCorners,
+      chartCorners
+    );
 
     // Full-res source canvas (hergebruik)
     if (!_ANALYSIS_WC) {
@@ -1688,19 +2079,15 @@ async function autoDetect() {
     // Warp strip naar 100×400 (lange as altijd → Y)
     if (stripCorners) {
       const ord = orderCorners(stripCorners);
-      // Afstand TL→TR = breedte, TL→BL = hoogte van de gedetecteerde strip
       const sw = Math.hypot(ord[1].x-ord[0].x, ord[1].y-ord[0].y);
       const sh = Math.hypot(ord[3].x-ord[0].x, ord[3].y-ord[0].y);
-      // Als de strip landscape is (breedte > hoogte), draai 90° zodat
-      // de lange as op de Y-as van het ge-warpte canvas valt.
-      // Dat is nodig omdat detectPadRegion langs Y-slices werkt.
       const dst = sh >= sw
         ? [{x:0,y:0},{x:100,y:0},{x:100,y:400},{x:0,y:400}]   // portrait
         : [{x:0,y:400},{x:0,y:0},{x:100,y:0},{x:100,y:400}];   // landscape → roteer 90°
       const H = computeHomography(ord, dst);
       if (H) {
         const wc = document.createElement('canvas');
-        wc.width=100; wc.height=400;
+        wc.width = 100; wc.height = 400;
         STRIP_WARPED_CTX = wc.getContext('2d');
         applyHomography(_ANALYSIS_WC, STRIP_WARPED_CTX, 100, 400, H);
       }
@@ -1708,17 +2095,19 @@ async function autoDetect() {
 
     // Warp kaart naar 360×240
     if (chartCorners) {
+      const cc = chartCorners;
+      const pts = [{x:cc.x0,y:cc.y0},{x:cc.x1,y:cc.y0},{x:cc.x1,y:cc.y1},{x:cc.x0,y:cc.y1}];
       const dst = [{x:0,y:0},{x:360,y:0},{x:360,y:240},{x:0,y:240}];
-      const H   = computeHomography(orderCorners(chartCorners), dst);
+      const H = computeHomography(orderCorners(pts), dst);
       if (H) {
         const wc = document.createElement('canvas');
-        wc.width=360; wc.height=240;
+        wc.width = 360; wc.height = 240;
         CHART_WARPED_CTX = wc.getContext('2d');
         applyHomography(_ANALYSIS_WC, CHART_WARPED_CTX, 360, 240, H);
       }
     }
 
-    AUTO_DETECT_DONE = !!(STRIP_WARPED_CTX && CHART_WARPED_CTX);
+    AUTO_DETECT_DONE = !!(STRIP_PAD_BLOBS && CHART_GRID_BLOBS);
 
     if (AUTO_DETECT_DONE) {
       const analyseBtn = document.getElementById('roi-analyse-btn');
@@ -1730,7 +2119,7 @@ async function autoDetect() {
       const fallback = document.getElementById('manual-fallback-btn');
       if (fallback) fallback.style.display = '';
     } else {
-      showDetectionFailure(!STRIP_WARPED_CTX, !CHART_WARPED_CTX);
+      showDetectionFailure(!STRIP_PAD_BLOBS, !CHART_GRID_BLOBS);
     }
   } catch(e) {
     console.error('autoDetect error:', e);
@@ -1740,17 +2129,85 @@ async function autoDetect() {
   }
 }
 
-// ── Analyse op ge-warpte canvassen ────────────────────────────
+// ── Analyse op blob-gebaseerde detectie ──────────────────────
 async function runAnalysisWarped() {
   const status = document.getElementById('ai-status');
   status.innerHTML = '<div class="loading-block"><div class="sp"></div><p style="margin-top:6px;font-size:13px">Analyseren...</p></div>';
 
+  if (!STRIP_PAD_BLOBS || !CHART_GRID_BLOBS) {
+    // Fallback: als STRIP_WARPED_CTX/CHART_WARPED_CTX beschikbaar zijn, gebruik die
+    if (STRIP_WARPED_CTX && CHART_WARPED_CTX) {
+      return runAnalysisWarpedFallback();
+    }
+    status.innerHTML = '<div style="color:var(--bad);font-size:13px;padding:8px;background:#fcebeb;border-radius:8px">⚠️ Geen detectiedata beschikbaar.</div>';
+    return;
+  }
+
+  // Full-res imgData voor blobAvgLab
+  if (!_ANALYSIS_WC) {
+    _ANALYSIS_WC = document.createElement('canvas');
+    _ANALYSIS_WC.width  = ANALYZE_IMG.naturalWidth;
+    _ANALYSIS_WC.height = ANALYZE_IMG.naturalHeight;
+    _ANALYSIS_WC.getContext('2d').drawImage(ANALYZE_IMG, 0, 0);
+  }
+  const fullImgData = _ANALYSIS_WC.getContext('2d').getImageData(0, 0, _ANALYSIS_WC.width, _ANALYSIS_WC.height);
+  // Attach width/height for blobAvgLab
+  fullImgData.width  = _ANALYSIS_WC.width;
+  fullImgData.height = _ANALYSIS_WC.height;
+  const fullW = _ANALYSIS_WC.width;
+
+  // Voor elke pad blob: blobAvgLab → padLab
+  const padLabs = {};
+  STRIP_PAD_ORDER.forEach((key, i) => {
+    const blob = STRIP_PAD_BLOBS[i];
+    if (blob) padLabs[key] = blobAvgLab(blob, fullImgData, fullW);
+  });
+
+  // buildLiveChart → liveChart
+  const liveChart = buildLiveChart(CHART_GRID_BLOBS.rowBlobs, CHART_ROT);
+
+  // Voor elke parameter: beste ΔE match in liveChart rij i
+  const results = {};
+  PARAMS.forEach((p, pi) => {
+    const padSample = padLabs[p.key];
+    if (!padSample) return;
+    const chartBlobs = liveChart[p.key] || [];
+    const refSamples = chartBlobs.map(b => blobAvgLab(b, fullImgData, fullW));
+
+    let bestIdx = 0, bestDE = Infinity;
+    const allDE = refSamples.map((ref, i) => {
+      const d = deltaE(padSample.lab, ref.lab);
+      if (d < bestDE) { bestDE = d; bestIdx = i; }
+      return d;
+    });
+
+    results[p.key] = {
+      value: p.cells[bestIdx]?.v ?? p.min,
+      bestIdx, bestDE,
+      padSample,
+      refSamples,
+      chartBlobs,
+      allDE
+    };
+  });
+
+  status.innerHTML = '';
+  const vals = {};
+  PARAMS.forEach(p => { if (results[p.key]) vals[p.key] = results[p.key].value; });
+  applyAI(vals);
+
+  renderVerificationPanel(results);
+  document.getElementById('debug-details').style.display = '';
+}
+
+// ── Fallback: analyse op warped canvassen (zonder blobs) ──────
+async function runAnalysisWarpedFallback() {
+  const status = document.getElementById('ai-status');
   const wCtx = STRIP_WARPED_CTX;
   const cCtx = CHART_WARPED_CTX;
   const sr   = WARPED_STRIP_ROI;
   const cr   = WARPED_CHART_ROI;
 
-  // Pad-regio detecteren op rechtgetrokken strip
   const padInfo = detectPadRegion(wCtx, sr);
   if (padInfo.error) {
     status.innerHTML = `<div style="color:var(--bad);font-size:13px;padding:8px;background:#fcebeb;border-radius:8px">⚠️ ${padInfo.error}</div>`;
@@ -1775,7 +2232,6 @@ async function runAnalysisWarped() {
     padRects[key]   = {x:px, y:py, w:pw, h:ph};
   });
 
-  // Referentiekaart samplen (rotation-aware, zelfde als manual pad)
   const chartSamples={}, chartRects={};
   const numRows = CHART_LAYOUT.length;
   CHART_LAYOUT.forEach((row, ri) => {
@@ -1788,7 +2244,6 @@ async function runAnalysisWarped() {
     }
   });
 
-  // Pad↔referentie vergelijken via ΔE
   const results={};
   PARAMS.forEach(p => {
     const padLab = padSamples[p.key].lab;
@@ -1812,53 +2267,91 @@ async function runAnalysisWarped() {
   PARAMS.forEach(p => { vals[p.key] = results[p.key].value; });
   applyAI(vals);
 
-  renderDebugPanelWarped(results);
-  document.getElementById('debug-details').style.display = 'block';
+  renderVerificationPanel(results);
+  document.getElementById('debug-details').style.display = '';
 }
 
-// ── Debug panel voor warped modus ─────────────────────────────
-function renderDebugPanelWarped(results) {
+// ── Verificatie-panel (vervangt renderDebugPanel/Warped) ───────
+function renderVerificationPanel(results) {
   const panel = document.getElementById('debug-panel');
   if (!panel) return;
-  const lab2str = l => `L${l.L.toFixed(0)} a${l.a.toFixed(0)} b${l.b.toFixed(0)}`;
 
   panel.innerHTML = PARAMS.map(p => {
     const r = results[p.key]; if (!r) return '';
-    const val = typeof r.value==='number' && p.dec===1 ? r.value.toFixed(1) : r.value;
-    return `<div class="dbg-row">
-      <div class="dbg-row-title">${p.label}: <strong>${val}</strong> (ΔE ${r.bestDE.toFixed(1)})</div>
-      <div class="dbg-cells">
+    const val = typeof r.value === 'number' && p.dec === 1 ? r.value.toFixed(1) : r.value;
+    const de  = typeof r.bestDE === 'number' ? r.bestDE.toFixed(1) : '?';
+
+    // Pad crop: use padSample.sr if available (bbox rect in source canvas)
+    const padSr = r.padSample?.sr;
+
+    // Reference cells: either chartBlobs (blob mode) or chartRects (warped mode)
+    const nRefs = r.refSamples ? r.refSamples.length : 0;
+    const refCells = r.refSamples ? r.refSamples.map((ref, i) => {
+      const isBest = i === r.bestIdx;
+      return `<div class="dbg-cell">
+        <canvas id="vrif-ref-${p.key}-${i}" width="48" height="40"
+          style="border:2px solid ${isBest ? '#1D9E75' : 'transparent'};border-radius:3px;display:block"></canvas>
+        <div style="font-size:8px;color:${isBest ? '#1D9E75' : 'var(--t3)'}">ΔE ${r.allDE[i]?.toFixed(1) ?? ''}</div>
+      </div>`;
+    }).join('') : '';
+
+    return `<div class="verif-section">
+      <div class="verif-title">${p.label}: ${val} (ΔE ${de})</div>
+      <div class="verif-cells">
         <div class="dbg-cell">
-          <canvas id="dbg-pad-${p.key}" width="44" height="36"
+          <canvas id="vrif-pad-${p.key}" width="72" height="56"
             style="border:1.5px solid #c89600;border-radius:3px;display:block"></canvas>
-          <div>strip pad</div>
-          <div>${r.padSample.r},${r.padSample.g},${r.padSample.b}</div>
-          <div>${lab2str(r.padSample.lab)}</div>
+          <div style="font-size:8px;color:var(--t3)">strip pad</div>
         </div>
-        <div style="font-size:14px;color:var(--t3);padding-bottom:22px">→</div>
-        ${r.refSamples.map((ref,i)=>`
-          <div class="dbg-cell">
-            <canvas id="dbg-ref-${p.key}-${i}" width="36" height="28"
-              style="border:1.5px solid ${i===r.bestIdx?'var(--g)':'transparent'};border-radius:3px;display:block"></canvas>
-            <div>${p.cells[i]?.v??''}</div>
-            <div style="color:${i===r.bestIdx?'var(--g)':'var(--t3)'}">ΔE ${r.allDE[i].toFixed(1)}</div>
-          </div>`).join('')}
+        <div style="font-size:14px;color:var(--t3);padding-bottom:20px">→</div>
+        ${refCells}
       </div>
     </div>`;
   }).join('');
 
   requestAnimationFrame(() => {
-    function cropTo(id, srcCanvas, sr) {
-      const c = document.getElementById(id); if (!c) return;
+    function cropToCanvas(id, srcCanvas, sr) {
+      const c = document.getElementById(id); if (!c || !srcCanvas) return;
       c.getContext('2d').drawImage(srcCanvas,
-        Math.round(sr.x), Math.round(sr.y),
-        Math.max(1,Math.round(sr.w)), Math.max(1,Math.round(sr.h)),
+        Math.round(sr.x ?? sr.x1 ?? 0), Math.round(sr.y ?? sr.y1 ?? 0),
+        Math.max(1, Math.round(sr.w ?? (sr.x2 - sr.x1) ?? 1)),
+        Math.max(1, Math.round(sr.h ?? (sr.y2 - sr.y1) ?? 1)),
         0, 0, c.width, c.height);
     }
+    function cropToBlobCanvas(id, blob) {
+      if (!blob || !_ANALYSIS_WC) return;
+      const bb = blob.bbox;
+      cropToCanvas(id, _ANALYSIS_WC, {
+        x: bb.x1, y: bb.y1, w: bb.x2 - bb.x1, h: bb.y2 - bb.y1
+      });
+    }
+
     PARAMS.forEach(p => {
       const r = results[p.key]; if (!r) return;
-      cropTo('dbg-pad-'+p.key, STRIP_WARPED_CTX.canvas, r.padSample.sr);
-      r.refSamples.forEach((ref,i) => cropTo('dbg-ref-'+p.key+'-'+i, CHART_WARPED_CTX.canvas, ref.sr));
+
+      // Pad crop
+      if (r.padSample?.sr) {
+        // Warped mode: sr references strip warped canvas
+        const srcCanvas = STRIP_WARPED_CTX ? STRIP_WARPED_CTX.canvas : _ANALYSIS_WC;
+        cropToCanvas('vrif-pad-' + p.key, srcCanvas, r.padSample.sr);
+      } else if (STRIP_PAD_BLOBS) {
+        const pi = STRIP_PAD_ORDER.indexOf(p.key);
+        if (pi >= 0) cropToBlobCanvas('vrif-pad-' + p.key, STRIP_PAD_BLOBS[pi]);
+      }
+
+      // Ref cells
+      if (r.refSamples) {
+        r.refSamples.forEach((ref, i) => {
+          if (r.chartBlobs && r.chartBlobs[i]) {
+            // Blob mode: draw from full-res canvas
+            cropToBlobCanvas('vrif-ref-' + p.key + '-' + i, r.chartBlobs[i]);
+          } else if (ref.sr) {
+            // Warped mode: draw from chart warped canvas
+            const srcCanvas = CHART_WARPED_CTX ? CHART_WARPED_CTX.canvas : _ANALYSIS_WC;
+            cropToCanvas('vrif-ref-' + p.key + '-' + i, srcCanvas, ref.sr);
+          }
+        });
+      }
     });
   });
 }
