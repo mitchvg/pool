@@ -1283,11 +1283,59 @@ function applyHomography(srcCanvas, dstCtx, dstW, dstH, H) {
 
 // ── Strip detectie: helder masker + connected components + PCA ─
 
+// Adaptieve binarisatie (jsQR-stijl):
+// Iedere 8×8-regio krijgt eigen drempel op basis van lokaal min/max.
+// Lage-contrastregio's erven drempel van buren (voorkomt verkeerde snede bij egaal witte strip).
 function buildBrightMask(imgData, w, h) {
-  const mask = new Uint8Array(w*h);
+  const RS = 8, MIN_DYN = 24;
   const d = imgData.data;
+  const gray = new Uint8Array(w*h);
   for (let i = 0; i < w*h; i++)
-    mask[i] = Math.min(d[i*4], d[i*4+1], d[i*4+2]) > 190 ? 1 : 0;
+    gray[i] = (d[i*4]*54 + d[i*4+1]*183 + d[i*4+2]*19) >> 8; // BT.709 approx
+
+  const hR = Math.ceil(h/RS), wR = Math.ceil(w/RS);
+  const bp = new Uint8Array(hR*wR); // blackPoint per regio
+
+  for (let yr = 0; yr < hR; yr++) {
+    for (let xr = 0; xr < wR; xr++) {
+      const y0=yr*RS, x0=xr*RS;
+      const y1=Math.min(y0+RS,h), x1=Math.min(x0+RS,w);
+      let sum=0, mn=255, mx=0;
+      for (let y=y0; y<y1; y++)
+        for (let x=x0; x<x1; x++) {
+          const v=gray[y*w+x]; sum+=v;
+          if (v<mn) mn=v; if (v>mx) mx=v;
+        }
+      const n=(y1-y0)*(x1-x0);
+      let avg = sum/n;
+      if (mx-mn <= MIN_DYN) {
+        avg = mn/2;
+        if (yr>0 && xr>0) {
+          const na=(bp[(yr-1)*wR+xr] + 2*bp[yr*wR+(xr-1)] + bp[(yr-1)*wR+(xr-1)])/4;
+          if (mn < na) avg = na;
+        }
+      }
+      bp[yr*wR+xr] = Math.round(avg);
+    }
+  }
+
+  const mask = new Uint8Array(w*h);
+  for (let yr = 0; yr < hR; yr++) {
+    for (let xr = 0; xr < wR; xr++) {
+      // 5×5 regio-gemiddelde voor soepele overgang
+      const rt=Math.max(0,yr-2), rb=Math.min(hR-1,yr+2);
+      const rl=Math.max(0,xr-2), rr=Math.min(wR-1,xr+2);
+      let ts=0, tn=0;
+      for (let y2=rt; y2<=rb; y2++)
+        for (let x2=rl; x2<=rr; x2++) { ts+=bp[y2*wR+x2]; tn++; }
+      const thresh = ts/tn;
+      const y0=yr*RS, x0=xr*RS;
+      const y1=Math.min(y0+RS,h), x1=Math.min(x0+RS,w);
+      for (let y=y0; y<y1; y++)
+        for (let x=x0; x<x1; x++)
+          mask[y*w+x] = gray[y*w+x] > thresh ? 1 : 0;
+    }
+  }
   return mask;
 }
 
@@ -1474,27 +1522,74 @@ function scoreGridPeriodicity(sobel, w, x0, y0, rw, rh) {
   return axiScore(colSums) * axiScore(rowSums);
 }
 
+// Kaartdetectie via globale rij-/kolomsommen van Sobel-edges.
+// Pieken in de sommen = rasterscheidingslijnen van de kaart.
+// Beste groep evenwijdige pieken (kleinste stddev/mean van tussenafstanden) geeft kaartranden.
+// Geeft échte kaartranden i.p.v. een willekeurig schuifvenster.
 function detectChart(imgData, w, h) {
-  const sobel   = buildSobelMag(imgData, w, h);
-  const scales  = [0.10, 0.18, 0.28, 0.42];
-  let best=null, bestScore=1.0; // drempelwaarde
+  const sobel = buildSobelMag(imgData, w, h);
 
-  for (const scale of scales) {
-    const rh = Math.round(h*scale);
-    const rw = Math.round(rh*1.5); // 3:2 landscape
-    if (rw >= w || rh >= h || rw < 8 || rh < 8) continue;
-    const stepX = Math.max(1, Math.round(rw*0.40));
-    const stepY = Math.max(1, Math.round(rh*0.40));
-    for (let y0 = 0; y0+rh <= h; y0 += stepY) {
-      for (let x0 = 0; x0+rw <= w; x0 += stepX) {
-        const score = scoreGridPeriodicity(sobel, w, x0, y0, rw, rh);
-        if (score > bestScore) { bestScore=score; best={x0,y0,rw,rh}; }
+  const rowSums = new Float32Array(h);
+  const colSums = new Float32Array(w);
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++) {
+      const v = sobel[y*w+x];
+      rowSums[y] += v;
+      colSums[x] += v;
+    }
+
+  // Lokale maxima boven mean+1σ, met minimale onderlinge afstand
+  function findPeaks(sums, minDist) {
+    const n = sums.length;
+    let mean=0; for (let i=0; i<n; i++) mean+=sums[i]; mean/=n;
+    let vr=0;   for (let i=0; i<n; i++) vr+=(sums[i]-mean)**2;
+    const thresh = mean + Math.sqrt(vr/n);
+    const peaks = [];
+    for (let i=minDist; i<n-minDist; i++) {
+      if (sums[i] < thresh) continue;
+      let ok=true;
+      for (let j=i-minDist; j<=i+minDist; j++)
+        if (j!==i && sums[j]>=sums[i]) { ok=false; break; }
+      if (ok) peaks.push(i);
+    }
+    return peaks;
+  }
+
+  // Beste groep van minCnt..maxCnt aaneengesloten pieken met maximale regelmatigheid
+  function bestGroup(peaks, minCnt, maxCnt) {
+    if (peaks.length < minCnt) return null;
+    let best=null, bestScore=-1;
+    for (let i=0; i<peaks.length; i++) {
+      for (let j=i+minCnt-1; j<Math.min(peaks.length,i+maxCnt); j++) {
+        const g = peaks.slice(i,j+1);
+        const sp=[]; for (let k=1; k<g.length; k++) sp.push(g[k]-g[k-1]);
+        const sm=sp.reduce((a,b)=>a+b,0)/sp.length;
+        if (sm < 4) continue; // te dicht op elkaar
+        const sv=Math.sqrt(sp.reduce((a,s)=>a+(s-sm)**2,0)/sp.length);
+        const reg=Math.max(0,1-sv/sm);
+        const score=(g.length-1)*reg*(g[g.length-1]-g[0]);
+        if (score>bestScore) { bestScore=score; best=g; }
       }
     }
+    return best;
   }
-  if (!best) return null;
-  const {x0,y0,rw,rh}=best;
-  return [{x:x0,y:y0},{x:x0+rw,y:y0},{x:x0+rw,y:y0+rh},{x:x0,y:y0+rh}];
+
+  const hPeaks = findPeaks(rowSums, Math.max(4, Math.round(h*0.025)));
+  const vPeaks = findPeaks(colSums, Math.max(4, Math.round(w*0.018)));
+
+  const hGrp = bestGroup(hPeaks, 2, 7);
+  const vGrp = bestGroup(vPeaks, 2, 9);
+  if (!hGrp || !vGrp) return null;
+
+  const y0=hGrp[0], y1=hGrp[hGrp.length-1];
+  const x0=vGrp[0], x1=vGrp[vGrp.length-1];
+  const rw=x1-x0, rh=y1-y0;
+  if (rw < 12 || rh < 8) return null;
+  // Sanity check op aspect ratio (kaart is breder dan hoog, of vergelijkbaar)
+  const ar = rw/rh;
+  if (ar < 0.3 || ar > 8) return null;
+
+  return [{x:x0,y:y0},{x:x1,y:y0},{x:x1,y:y1},{x:x0,y:y1}];
 }
 
 // ── Detectie overlay op foto tekenen ─────────────────────────
@@ -1590,10 +1685,19 @@ async function autoDetect() {
       _ANALYSIS_WC.getContext('2d').drawImage(ANALYZE_IMG, 0, 0);
     }
 
-    // Warp strip naar 100×400
+    // Warp strip naar 100×400 (lange as altijd → Y)
     if (stripCorners) {
-      const dst = [{x:0,y:0},{x:100,y:0},{x:100,y:400},{x:0,y:400}];
-      const H   = computeHomography(orderCorners(stripCorners), dst);
+      const ord = orderCorners(stripCorners);
+      // Afstand TL→TR = breedte, TL→BL = hoogte van de gedetecteerde strip
+      const sw = Math.hypot(ord[1].x-ord[0].x, ord[1].y-ord[0].y);
+      const sh = Math.hypot(ord[3].x-ord[0].x, ord[3].y-ord[0].y);
+      // Als de strip landscape is (breedte > hoogte), draai 90° zodat
+      // de lange as op de Y-as van het ge-warpte canvas valt.
+      // Dat is nodig omdat detectPadRegion langs Y-slices werkt.
+      const dst = sh >= sw
+        ? [{x:0,y:0},{x:100,y:0},{x:100,y:400},{x:0,y:400}]   // portrait
+        : [{x:0,y:400},{x:0,y:0},{x:100,y:0},{x:100,y:400}];   // landscape → roteer 90°
+      const H = computeHomography(ord, dst);
       if (H) {
         const wc = document.createElement('canvas');
         wc.width=100; wc.height=400;
