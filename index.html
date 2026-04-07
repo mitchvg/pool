@@ -338,8 +338,8 @@ function buildForm() {
         </div>
       </div>
       <div id="roi-ui" style="display:none;margin-top:10px">
-        <div style="position:relative;display:inline-block;max-width:100%" id="roi-wrap">
-          <canvas id="roi-canvas" style="display:block;max-width:100%;border-radius:8px"></canvas>
+        <div style="position:relative;display:block;overflow:auto" id="roi-wrap">
+          <canvas id="roi-canvas" style="display:block;border-radius:8px"></canvas>
           <canvas id="roi-overlay" style="position:absolute;top:0;left:0;border-radius:8px;cursor:crosshair"></canvas>
         </div>
         <div class="roi-btn-row">
@@ -517,9 +517,15 @@ async function onStripPhoto(input) {
     const overlay = document.getElementById('roi-overlay');
     const maxW    = Math.min(520, (document.getElementById('app').offsetWidth || 400) - 40);
     DISPLAY_SCALE  = Math.min(1, maxW / ANALYZE_IMG.naturalWidth);
-    canvas.width   = overlay.width  = Math.round(ANALYZE_IMG.naturalWidth  * DISPLAY_SCALE);
-    canvas.height  = overlay.height = Math.round(ANALYZE_IMG.naturalHeight * DISPLAY_SCALE);
-    canvas.getContext('2d').drawImage(ANALYZE_IMG, 0, 0, canvas.width, canvas.height);
+    const dw = Math.round(ANALYZE_IMG.naturalWidth  * DISPLAY_SCALE);
+    const dh = Math.round(ANALYZE_IMG.naturalHeight * DISPLAY_SCALE);
+    // Stel ZOWEL canvas-pixels als CSS-grootte expliciet in (voorkomt mismatch overlay)
+    canvas.width   = overlay.width  = dw;
+    canvas.height  = overlay.height = dh;
+    canvas.style.width  = overlay.style.width  = dw + 'px';
+    canvas.style.height = overlay.style.height = dh + 'px';
+    canvas.style.maxWidth = overlay.style.maxWidth = 'none';
+    canvas.getContext('2d').drawImage(ANALYZE_IMG, 0, 0, dw, dh);
     DISPLAY_CANVAS = canvas;
 
     // Reset staat
