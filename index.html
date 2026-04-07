@@ -465,27 +465,22 @@ function applyAI(d) {
         if (cv) cv.style.border = '2px solid transparent';
       });
 
+      // Groene rand op best-matching cel
+      const bestCv = document.getElementById('crc-'+key+'-'+bestIdx);
+      if (bestCv) bestCv.style.border = '2px solid var(--g)';
+
       const rw = document.getElementById('rw-'+key);
       if (rw) rw.style.display = 'flex';
-    } else {
-      // Fallback: vergelijk met hardgecodeerde PARAMS kleuren
-      p.cells.forEach((cell, ci) => {
-        const dist = rgbDist(padRgb, hexRgb(cell.c));
-        if (dist < bestDist) { bestDist=dist; bestIdx=ci; }
-      });
+
+      // Slider + waarde instellen
+      const value = p.cells[bestIdx].v;
+      const sl = document.getElementById('sl-'+key);
+      if (sl) sl.value = value;
+      const vd = document.getElementById('vv-'+key);
+      if (vd) vd.textContent = typeof value==='number' ? value.toFixed(p.dec) : String(value);
+      setVal(p.fid, typeof value==='number' ? value.toFixed(p.dec) : String(value));
     }
-
-    // Groene rand op best-matching cel
-    const bestCv = document.getElementById('crc-'+key+'-'+bestIdx);
-    if (bestCv) bestCv.style.border = '2px solid var(--g)';
-
-    // Slider + waarde instellen
-    const value = p.cells[bestIdx].v;
-    const sl = document.getElementById('sl-'+key);
-    if (sl) sl.value = value;
-    const vd = document.getElementById('vv-'+key);
-    if (vd) vd.textContent = typeof value==='number' ? value.toFixed(p.dec) : String(value);
-    setVal(p.fid, typeof value==='number' ? value.toFixed(p.dec) : String(value));
+    // Geen rowBbox → waarde blijft op 0, geen crop getoond
   });
 
   showAdvice();
