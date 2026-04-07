@@ -781,36 +781,46 @@ function detectPadRegion(wCtx, roi) {
   const cross = vert ? (roi.x2-roi.x1) : (roi.y2-roi.y1);
   const N = 24, cm = 0.1;  // 24 slices, 10% cross-margin
 
-  const sats = [];
+  // Per slice: verzamel saturaties van ALLEEN heldere pixels (brightness > 60/255)
+  // Dit negeert donkere achtergrond die gemiddelde anders omlaag trekt
+  const sliceSats = [];
   for (let i = 0; i < N; i++) {
     const off = len * i / N, sz = len / N;
     const [sx,sy,sw,sh] = vert
       ? [roi.x1+cross*cm, roi.y1+off, Math.max(1,cross*(1-2*cm)), Math.max(1,sz)]
       : [roi.x1+off, roi.y1+cross*cm, Math.max(1,sz), Math.max(1,cross*(1-2*cm))];
     const data = wCtx.getImageData(Math.round(sx),Math.round(sy),Math.round(sw),Math.round(sh)).data;
-    let s=0, n=0;
+    const vals = [];
     for (let j=0; j<data.length; j+=4) {
-      const mx=Math.max(data[j],data[j+1],data[j+2]), mn=Math.min(data[j],data[j+1],data[j+2]);
-      s += mx>0 ? (mx-mn)/mx : 0; n++;
+      const r=data[j], g=data[j+1], b=data[j+2];
+      if ((r+g+b)/3 < 60) continue; // negeer donkere achtergrondpixels
+      const mx=Math.max(r,g,b), mn=Math.min(r,g,b);
+      vals.push(mx>0 ? (mx-mn)/mx : 0);
     }
-    sats.push(n>0 ? s/n : 0);
+    if (!vals.length) { sliceSats.push(0); continue; }
+    // 80e percentiel: robuuster dan gemiddelde, niet beïnvloed door uitschieters
+    vals.sort((a,b)=>a-b);
+    sliceSats.push(vals[Math.floor(vals.length * 0.80)]);
   }
 
-  const maxSat = Math.max(...sats);
-  if (maxSat < 0.04) return { startFrac:0, endFrac:1, autoFlip:false }; // geen contrast
+  // Geen fallback — als er geen duidelijk patroon is, geef foutmelding terug
+  const maxSat = Math.max(...sliceSats);
+  if (maxSat < 0.08) return { error: 'Geen gekleurde pads gevonden. Maak de strip-selectie strakker rondom alleen de strip.' };
 
-  const thresh = maxSat * 0.28;
+  // Drempel = 30% van piekwaarde
+  const thresh = maxSat * 0.30;
   let first=N, last=-1;
-  for (let i=0; i<N; i++) if (sats[i]>=thresh) { if (i<first) first=i; last=i; }
+  for (let i=0; i<N; i++) if (sliceSats[i]>=thresh) { if (i<first) first=i; last=i; }
 
-  // Klein buffer erbij
+  if (first > last) return { error: 'Pad-regio kon niet worden afgebakend.' };
+
+  // Klein buffer (1 slice) zodat randpixels van pads meegenomen worden
   first = Math.max(0, first-1);
   last  = Math.min(N-1, last+1);
-  const startFrac = first/N, endFrac = (last+1)/N;
 
-  // Handgreep = eind met laagste saturatie
-  // Als pads pas beginnen na >30% van strip → handgreep zit aan het begin → autoFlip
-  return { startFrac, endFrac, autoFlip: startFrac > 0.3 };
+  const startFrac = first/N, endFrac = (last+1)/N;
+  // autoFlip: handgreep zit aan het BEGIN als pads pas na >30% beginnen
+  return { startFrac, endFrac, autoFlip: startFrac > 0.30 };
 }
 
 // ── Cel-rechthoek in referentiekaart (rotation-aware) ─────────
@@ -846,7 +856,11 @@ async function runAnalysis() {
   const cr   = ROI.chart;
 
   // ── Strip: detecteer pad-regio, sla handgreep over ──────────
-  const padInfo    = detectPadRegion(wCtx, sr);
+  const padInfo = detectPadRegion(wCtx, sr);
+  if (padInfo.error) {
+    status.innerHTML = `<div style="color:var(--bad);font-size:13px;padding:8px;background:#fcebeb;border-radius:8px">⚠️ ${padInfo.error}</div>`;
+    return;
+  }
   const manualFlip = document.getElementById('roi-flip')?.checked ?? false;
   const flip       = padInfo.autoFlip !== manualFlip; // XOR: auto + handmatige override
   const stripVert  = (sr.y2-sr.y1) >= (sr.x2-sr.x1);
