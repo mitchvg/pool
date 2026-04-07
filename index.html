@@ -1466,94 +1466,133 @@ function ransacFindStrip(blobs, w, h, excludeSet = new Set()) {
   return { padBlobs, corners };
 }
 
-// ── Kaart-grid detectie via Y-clustering van blobs ────────────
-function detectChartGrid(blobs, stripBlobLabels, w, h) {
-  const filtered = blobs.filter(b => !stripBlobLabels.has(b.label));
-  if (filtered.length < 12) return null; // need at least 3 rows × 4 cols
+// ── Hulpfunctie: verwijder rand-outliers uit een rij ──────────
+// Detecteert blobs die door een grote kloof van de rest zijn gescheiden
+// (bv. een strip-pad dat in dezelfde Y-cluster belandde)
+function pruneRowOutliers(row, secondaryKey) {
+  if (row.length <= 3) return row;
+  const sorted = [...row].sort((a,b) => a[secondaryKey] - b[secondaryKey]);
+  const coords = sorted.map(b => b[secondaryKey]);
+  const spacings = coords.slice(1).map((v,i) => v - coords[i]);
+  const sortedSp = [...spacings].sort((a,b) => a-b);
+  const medSp = sortedSp[Math.floor(sortedSp.length / 2)];
+  if (medSp < 1) return sorted;
+  const maxGap = Math.max(medSp * 3.5, 15); // grote kloof = outlier
+  // Knip losse blobs aan het begin
+  let lo = 0;
+  while (lo < spacings.length && spacings[lo] > maxGap) lo++;
+  // Knip losse blobs aan het eind
+  let hi = spacings.length - 1;
+  while (hi >= 0 && spacings[hi] > maxGap) hi--;
+  return sorted.slice(lo, hi + 2); // spacings.length = row.length-1
+}
 
-  // Average blob height
-  const avgBlobH = filtered.reduce((s,b) => s + (b.bbox.y2 - b.bbox.y1), 0) / filtered.length;
+// ── Intern: cluster één as en scoor als kaartgrid ─────────────
+// primary='cy' → horizontale rijen (standaard)
+// primary='cx' → verticale kolommen (geroteerde fles)
+function _clusterGrid(candidates, primary, secondary) {
+  // Gemiddelde blob-dimensie langs de primary-as
+  const avgDim = candidates.reduce((s,b) =>
+    s + (primary==='cy' ? b.bbox.y2-b.bbox.y1 : b.bbox.x2-b.bbox.x1), 0) / candidates.length;
 
-  // Y-clustering: sort by cy, group where consecutive |cy diff| < 1.2 × avgBlobHeight
-  const sorted = [...filtered].sort((a,b) => a.cy - b.cy);
-  const rows = [];
-  let curRow = [sorted[0]];
+  // Cluster langs primary-as: gap > 1.5× gemiddelde dimensie → nieuwe rij
+  const sorted = [...candidates].sort((a,b) => a[primary] - b[primary]);
+  const clusters = [];
+  let cur = [sorted[0]];
   for (let i = 1; i < sorted.length; i++) {
-    if (Math.abs(sorted[i].cy - sorted[i-1].cy) < 1.2 * avgBlobH) {
-      curRow.push(sorted[i]);
+    if (sorted[i][primary] - sorted[i-1][primary] < 1.5 * avgDim) {
+      cur.push(sorted[i]);
     } else {
-      rows.push(curRow);
-      curRow = [sorted[i]];
+      clusters.push(cur);
+      cur = [sorted[i]];
     }
   }
-  rows.push(curRow);
+  clusters.push(cur);
 
-  // Try all contiguous row subsets of size 3..5
+  if (clusters.length < 4) return null;
+
   let bestResult = null, bestScore = -1;
 
-  for (let rStart = 0; rStart < rows.length; rStart++) {
-    for (let rEnd = rStart + 2; rEnd < Math.min(rows.length, rStart + 5); rEnd++) {
-      const candidateRows = rows.slice(rStart, rEnd + 1);
-      const numRows = candidateRows.length;
+  // Probeer alle aaneengesloten subsets van exact 4 clusters
+  for (let rStart = 0; rStart <= clusters.length - 4; rStart++) {
+    const rawRows = clusters.slice(rStart, rStart + 4);
 
-      // Each row must have 4..7 blobs
-      if (candidateRows.some(r => r.length < 4 || r.length > 7)) continue;
+    // Verwijder rand-outliers per rij (strip-pads die in een kaartrij belandden)
+    const rows = rawRows.map(row => pruneRowOutliers(row, secondary));
 
-      // X-regularity within each row
-      let sumXReg = 0;
-      for (const row of candidateRows) {
-        const xs = row.map(b => b.cx).sort((a,b) => a-b);
-        const spacings = [];
-        for (let i = 1; i < xs.length; i++) spacings.push(xs[i] - xs[i-1]);
-        if (!spacings.length) continue;
-        const m = spacings.reduce((a,b) => a+b, 0) / spacings.length;
-        if (m < 2) continue;
-        const std = Math.sqrt(spacings.reduce((s,v) => s + (v-m)**2, 0) / spacings.length);
-        sumXReg += Math.max(0, 1 - std/m);
-      }
-      const xReg = sumXReg / numRows;
-      if (xReg < 0.3) continue;
+    // Elke rij: 4..7 blobs (na pruning)
+    if (rows.some(r => r.length < 4 || r.length > 7)) continue;
 
-      // Y-regularity between rows (row cy spacings)
-      const rowCys = candidateRows.map(r => r.reduce((s,b) => s+b.cy, 0) / r.length);
-      const ySpacings = [];
-      for (let i = 1; i < rowCys.length; i++) ySpacings.push(rowCys[i] - rowCys[i-1]);
-      const yMean = ySpacings.reduce((a,b) => a+b, 0) / ySpacings.length;
-      if (yMean < 2) continue;
-      const yStd = Math.sqrt(ySpacings.reduce((s,v) => s + (v-yMean)**2, 0) / ySpacings.length);
-      const yReg = Math.max(0, 1 - yStd/yMean);
-      if (yReg < 0.3) continue;
+    // Secundaire regulariteit (X-spacing binnen elke rij)
+    let sumSecReg = 0;
+    for (const row of rows) {
+      const coords = row.map(b => b[secondary]);
+      const spacings = coords.slice(1).map((v,i) => v - coords[i]);
+      if (!spacings.length) continue;
+      const m = spacings.reduce((a,b) => a+b, 0) / spacings.length;
+      if (m < 2) continue;
+      const std = Math.sqrt(spacings.reduce((s,v) => s+(v-m)**2, 0) / spacings.length);
+      sumSecReg += Math.max(0, 1 - std / m);
+    }
+    const secReg = sumSecReg / 4;
+    if (secReg < 0.30) continue;
 
-      const totalCells = candidateRows.reduce((s,r) => s + r.length, 0);
-      const score = totalCells * xReg * yReg;
+    // Primaire regulariteit (afstand tussen rij-centroids)
+    const centroids = rows.map(r => r.reduce((s,b) => s+b[primary],0) / r.length);
+    const priSp = centroids.slice(1).map((v,i) => v - centroids[i]);
+    const priMean = priSp.reduce((a,b) => a+b,0) / priSp.length;
+    if (priMean < 2) continue;
+    const priStd = Math.sqrt(priSp.reduce((s,v) => s+(v-priMean)**2,0) / priSp.length);
+    const priReg = Math.max(0, 1 - priStd / priMean);
+    if (priReg < 0.30) continue;
 
-      if (score > bestScore) {
-        bestScore = score;
-        bestResult = candidateRows;
-      }
+    // Patroonbonus: [5,6,6,5] — buitenste rijen kleiner dan binnenste
+    // De AquaChek 4-in-1 kaart heeft exact dit patroon (pH=5, Cl=6, Alk=6, Stab=5)
+    const counts = rows.map(r => r.length);
+    const outerSmaller = counts[0] <= counts[1] && counts[3] <= counts[2];
+    const outerLarger  = counts[0] >= counts[1] && counts[3] >= counts[2];
+    const patternBonus = (outerSmaller || outerLarger) ? 1.6 : 1.0;
+
+    // Extra bonus als totaal dichtbij de verwachte 22 cellen ligt
+    const totalCells = rows.reduce((s,r) => s+r.length, 0);
+    const cellBonus = totalCells >= 18 ? 1.2 : 1.0;
+
+    const score = totalCells * secReg * priReg * patternBonus * cellBonus;
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestResult = { rows, score, primary, secondary };
     }
   }
 
-  if (!bestResult) return null;
+  return bestResult;
+}
 
-  // Compute bounding rect of all blobs in winning rows
-  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const row of bestResult) {
-    for (const b of row) {
-      if (b.bbox.x1 < x0) x0 = b.bbox.x1;
-      if (b.bbox.y1 < y0) y0 = b.bbox.y1;
-      if (b.bbox.x2 > x1) x1 = b.bbox.x2;
-      if (b.bbox.y2 > y1) y1 = b.bbox.y2;
-    }
+// ── Kaart-grid detectie: horizontale én verticale oriëntatie ──
+// Horizontale rijen (Y-primair) = fles rechtop
+// Verticale kolommen (X-primair) = fles ~90° gedraaid
+function detectChartGrid(blobs, excludeLabels, w, h) {
+  const candidates = blobs.filter(b => !excludeLabels.has(b.label));
+  if (candidates.length < 10) return null;
+
+  // Probeer beide assen; pak de hoogste score
+  const tryY = _clusterGrid(candidates, 'cy', 'cx');
+  const tryX = _clusterGrid(candidates, 'cx', 'cy');
+
+  if (!tryY && !tryX) return null;
+  const best = (!tryY || (tryX && tryX.score > tryY.score)) ? tryX : tryY;
+
+  // Sorteer elke rij langs secundaire as (links→rechts of boven→onder)
+  for (const row of best.rows) row.sort((a,b) => a[best.secondary] - b[best.secondary]);
+
+  // Bounding rect van alle gevonden blob-bboxen
+  let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
+  for (const row of best.rows) for (const b of row) {
+    if (b.bbox.x1<x0) x0=b.bbox.x1; if (b.bbox.y1<y0) y0=b.bbox.y1;
+    if (b.bbox.x2>x1) x1=b.bbox.x2; if (b.bbox.y2>y1) y1=b.bbox.y2;
   }
 
-  // Sort each row left→right
-  for (const row of bestResult) row.sort((a,b) => a.cx - b.cx);
-
-  return {
-    rowBlobs: bestResult,
-    corners: { x0, y0, x1, y1 }
-  };
+  return { rowBlobs: best.rows, corners: {x0, y0, x1, y1} };
 }
 
 // ── Gemiddelde LAB van blob (alleen gekleurde pixels) ─────────
