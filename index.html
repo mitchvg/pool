@@ -104,6 +104,8 @@ details summary{cursor:pointer;font-size:11px;color:var(--t3);padding:3px 0;user
 .dbg-cells{display:flex;gap:4px;flex-wrap:wrap;align-items:flex-end}
 .dbg-cell{text-align:center;font-size:7.5px;color:var(--t3);line-height:1.35}
 .dbg-cell canvas{display:block;border-radius:3px;border:1.5px solid transparent}
+#detect-spinner{position:absolute;inset:0;background:rgba(255,255,255,.82);display:none;flex-direction:column;align-items:center;justify-content:center;border-radius:8px;z-index:5;gap:8px}
+#detect-spinner p{font-size:12px;color:var(--t2);margin:0}
 </style>
 </head>
 <body>
@@ -148,6 +150,13 @@ const CHART_LAYOUT = [
 const STRIP_PAD_ORDER = ['ph','chlorine','alkalinity','stabilizer'];
 const SAMPLE_MARGIN   = 0.25; // 25% marge aan elke kant voor center-crop
 let   CHART_ROT       = 0;   // 0=pH boven, 1=pH rechts, 2=pH onder, 3=pH links
+
+// ── Auto-detectie globals ─────────────────────────────────────
+let STRIP_WARPED_CTX = null;   // offscreen canvas 100×400 (rechtgetrokken strip)
+let CHART_WARPED_CTX = null;   // offscreen canvas 360×240 (rechtgetrokken kaart)
+let AUTO_DETECT_DONE = false;
+const WARPED_STRIP_ROI = { x1:0, y1:0, x2:100, y2:400 };
+const WARPED_CHART_ROI = { x1:0, y1:0, x2:360, y2:240 };
 
 // ── URL params + localStorage ─────────────────────────────────
 function getParam(k) {
@@ -344,24 +353,36 @@ function buildForm() {
         <div style="position:relative;display:block;overflow:auto" id="roi-wrap">
           <canvas id="roi-canvas" style="display:block;border-radius:8px"></canvas>
           <canvas id="roi-overlay" style="position:absolute;top:0;left:0;border-radius:8px;cursor:crosshair"></canvas>
+          <div id="detect-spinner">
+            <div class="sp"></div>
+            <p>Strip en kaart detecteren...</p>
+          </div>
         </div>
-        <div class="roi-btn-row">
-          <button class="roi-btn strip" id="roi-btn-strip" onclick="startROI('strip')">📍 Strip</button>
-          <button class="roi-btn chart" id="roi-btn-chart" onclick="startROI('chart')">🎨 Kleurenkaart</button>
-          <button class="btn btn-sm" id="roi-analyse-btn" disabled onclick="runAnalysis()" style="flex:2">Analyseer</button>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap">
+          <div id="roi-status" style="font-size:11px;color:var(--t3);flex:1">Detectie bezig...</div>
+          <button class="btn btn-sm" id="roi-analyse-btn" disabled onclick="runAnalysis()">Analyseer</button>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
-          <div id="roi-status" style="font-size:11px;color:var(--t3);flex:1">Selecteer de teststrip en de kleurenkaart</div>
-          <label style="font-size:11px;color:var(--t3);cursor:pointer;display:flex;align-items:center;gap:3px;margin:0;white-space:nowrap">
-            <input type="checkbox" id="roi-flip" onchange="renderROIOverlay()" style="width:auto;padding:0"> Strip omdraaien
-          </label>
+        <button class="btn btn-sm btn-out" id="manual-fallback-btn" onclick="enableManualROI()"
+          style="display:none;margin-top:6px;font-size:12px;width:auto;padding:7px 14px">✏️ Handmatig aanpassen</button>
+        <div id="manual-roi-controls" style="display:none;margin-top:6px">
+          <div class="roi-btn-row">
+            <button class="roi-btn strip" id="roi-btn-strip" onclick="startROI('strip')">📍 Strip</button>
+            <button class="roi-btn chart" id="roi-btn-chart" onclick="startROI('chart')">🎨 Kleurenkaart</button>
+          </div>
         </div>
-        <div style="display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap">
-          <span style="font-size:10px;color:var(--t3)">pH-rij staat:</span>
-          <button class="crot-btn on" id="crot0" onclick="setChartRot(0)">▲ Boven</button>
-          <button class="crot-btn"    id="crot1" onclick="setChartRot(1)">▶ Rechts</button>
-          <button class="crot-btn"    id="crot2" onclick="setChartRot(2)">▼ Onder</button>
-          <button class="crot-btn"    id="crot3" onclick="setChartRot(3)">◀ Links</button>
+        <div id="adjust-controls" style="display:none;margin-top:6px">
+          <div style="display:flex;align-items:center;gap:8px;margin-top:5px">
+            <label style="font-size:11px;color:var(--t3);cursor:pointer;display:flex;align-items:center;gap:3px;margin:0;white-space:nowrap">
+              <input type="checkbox" id="roi-flip" onchange="renderROIOverlay()" style="width:auto;padding:0"> Strip omdraaien
+            </label>
+          </div>
+          <div style="display:flex;align-items:center;gap:5px;margin-top:6px;flex-wrap:wrap">
+            <span style="font-size:10px;color:var(--t3)">pH-rij staat:</span>
+            <button class="crot-btn on" id="crot0" onclick="setChartRot(0)">▲ Boven</button>
+            <button class="crot-btn"    id="crot1" onclick="setChartRot(1)">▶ Rechts</button>
+            <button class="crot-btn"    id="crot2" onclick="setChartRot(2)">▼ Onder</button>
+            <button class="crot-btn"    id="crot3" onclick="setChartRot(3)">◀ Links</button>
+          </div>
         </div>
         <details id="debug-details" style="display:none;margin-top:8px">
           <summary>Debug info (crops + ΔE waarden)</summary>
@@ -542,11 +563,17 @@ async function onStripPhoto(input) {
     ROI = { strip: null, chart: null };
     SEL_MODE = null;
     _ANALYSIS_WC = null;
+    AUTO_DETECT_DONE = false;
+    STRIP_WARPED_CTX = null;
+    CHART_WARPED_CTX = null;
     zone.style.display  = 'none';
     roiUI.style.display = 'block';
     document.getElementById('debug-details').style.display = 'none';
-    updateROIStatus();
+    document.getElementById('roi-analyse-btn').disabled = true;
+    const statusEl = document.getElementById('roi-status');
+    if (statusEl) statusEl.textContent = 'Strip en kaart detecteren...';
     setupROIEvents();
+    autoDetect();
   } catch(e) {
     inner.innerHTML = `<div style="color:var(--bad);font-size:13px">Upload mislukt: ${esc(e.message)}</div>`;
   }
@@ -596,12 +623,16 @@ function updateROIStatus() {
   const chartBtn   = document.getElementById('roi-btn-chart');
   if (!status) return;
 
-  stripBtn.textContent = ROI.strip ? '✓ Strip'        : '📍 Strip';
-  chartBtn.textContent = ROI.chart ? '✓ Kleurenkaart' : '🎨 Kleurenkaart';
-  stripBtn.classList.toggle('done',   !!ROI.strip);
-  chartBtn.classList.toggle('done',   !!ROI.chart);
-  stripBtn.classList.toggle('active', SEL_MODE === 'strip');
-  chartBtn.classList.toggle('active', SEL_MODE === 'chart');
+  if (stripBtn) {
+    stripBtn.textContent = ROI.strip ? '✓ Strip'        : '📍 Strip';
+    stripBtn.classList.toggle('done',   !!ROI.strip);
+    stripBtn.classList.toggle('active', SEL_MODE === 'strip');
+  }
+  if (chartBtn) {
+    chartBtn.textContent = ROI.chart ? '✓ Kleurenkaart' : '🎨 Kleurenkaart';
+    chartBtn.classList.toggle('done',   !!ROI.chart);
+    chartBtn.classList.toggle('active', SEL_MODE === 'chart');
+  }
 
   if      (SEL_MODE === 'strip') status.textContent = 'Teken een rechthoek om de teststrip';
   else if (SEL_MODE === 'chart') status.textContent = 'Teken een rechthoek om de kleurenkaart op de fles';
@@ -840,6 +871,8 @@ function getChartCellRect(cr, rowIdx, numRows, colIdx, numCols) {
 
 // ── Hoofdanalyse ──────────────────────────────────────────────
 async function runAnalysis() {
+  if (AUTO_DETECT_DONE && STRIP_WARPED_CTX && CHART_WARPED_CTX)
+    return runAnalysisWarped();
   if (!ANALYZE_IMG || !ROI.strip || !ROI.chart) return;
   const status = document.getElementById('ai-status');
   status.innerHTML = '<div class="loading-block"><div class="sp"></div><p style="margin-top:6px;font-size:13px">Analyseren...</p></div>';
@@ -1149,6 +1182,581 @@ function toast(msg, err=false) {
   el.textContent = msg; el.style.background = err?'#c0392b':'#111';
   el.classList.add('on'); clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>el.classList.remove('on'), err?5000:3000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AUTO-DETECTIE: wiskunde, detectoren, warp, orchestratie
+// ═══════════════════════════════════════════════════════════════
+
+// ── Lineair stelsel oplossen (Gauss met partiële pivoting) ────
+function gaussianElimination(A, b) {
+  const n = b.length;
+  const M = A.map((row, i) => [...row, b[i]]);
+  for (let col = 0; col < n; col++) {
+    let maxRow = col;
+    for (let row = col+1; row < n; row++)
+      if (Math.abs(M[row][col]) > Math.abs(M[maxRow][col])) maxRow = row;
+    [M[col], M[maxRow]] = [M[maxRow], M[col]];
+    if (Math.abs(M[col][col]) < 1e-12) return null;
+    for (let row = col+1; row < n; row++) {
+      const f = M[row][col] / M[col][col];
+      for (let k = col; k <= n; k++) M[row][k] -= f * M[col][k];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let i = n-1; i >= 0; i--) {
+    x[i] = M[i][n];
+    for (let j = i+1; j < n; j++) x[i] -= M[i][j] * x[j];
+    x[i] /= M[i][i];
+  }
+  return x;
+}
+
+// ── Homography berekenen (8-punt DLT, fix h8=1) ───────────────
+// src en dst: arrays van 4 {x,y} punten
+function computeHomography(src, dst) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const {x, y} = src[i], {x: u, y: v} = dst[i];
+    A.push([-x, -y, -1,  0,  0,  0, u*x, u*y]); b.push(-u);
+    A.push([ 0,  0,  0, -x, -y, -1, v*x, v*y]); b.push(-v);
+  }
+  const h = gaussianElimination(A, b);
+  if (!h) return null;
+  return [[h[0],h[1],h[2]],[h[3],h[4],h[5]],[h[6],h[7],1]];
+}
+
+// ── 3×3 matrix inverteren ─────────────────────────────────────
+function invertMatrix3x3(m) {
+  const [[a,b,c],[d,e,f],[g,h,k]] = m;
+  const det = a*(e*k-f*h) - b*(d*k-f*g) + c*(d*h-e*g);
+  if (Math.abs(det) < 1e-12) return null;
+  const inv = 1/det;
+  return [
+    [(e*k-f*h)*inv, (c*h-b*k)*inv, (b*f-c*e)*inv],
+    [(f*g-d*k)*inv, (a*k-c*g)*inv, (c*d-a*f)*inv],
+    [(d*h-e*g)*inv, (b*g-a*h)*inv, (a*e-b*d)*inv],
+  ];
+}
+
+// ── Hoekpunten sorteren: TL, TR, BR, BL ───────────────────────
+function orderCorners(pts) {
+  const sorted = [...pts].sort((a,b) => a.y - b.y);
+  const top    = sorted.slice(0,2).sort((a,b) => a.x - b.x);
+  const bottom = sorted.slice(2,4).sort((a,b) => a.x - b.x);
+  return [top[0], top[1], bottom[1], bottom[0]];
+}
+
+// ── Perspectief-correctie via inverse mapping + bilineaire interpolatie ──
+// H: src→dst. Voor elk dst-pixel: H⁻¹ → src-pixel → bilineaire sample
+function applyHomography(srcCanvas, dstCtx, dstW, dstH, H) {
+  const Hinv = invertMatrix3x3(H);
+  if (!Hinv) return;
+  const srcCtx  = srcCanvas.getContext('2d');
+  const srcData = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
+  const dstData = dstCtx.createImageData(dstW, dstH);
+  const sw = srcCanvas.width, sh = srcCanvas.height;
+  const [h0, h1, h2] = Hinv;
+
+  for (let v = 0; v < dstH; v++) {
+    for (let u = 0; u < dstW; u++) {
+      const wx = h0[0]*u + h0[1]*v + h0[2];
+      const wy = h1[0]*u + h1[1]*v + h1[2];
+      const ww = h2[0]*u + h2[1]*v + h2[2];
+      const sx = wx/ww, sy = wy/ww;
+      const x0 = Math.floor(sx), y0 = Math.floor(sy);
+      const x1 = x0+1,           y1 = y0+1;
+      if (x0 < 0 || y0 < 0 || x1 >= sw || y1 >= sh) continue;
+      const fx = sx-x0, fy = sy-y0;
+      const i00=(y0*sw+x0)*4, i10=(y0*sw+x1)*4, i01=(y1*sw+x0)*4, i11=(y1*sw+x1)*4;
+      const w00=(1-fx)*(1-fy), w10=fx*(1-fy), w01=(1-fx)*fy, w11=fx*fy;
+      const di = (v*dstW+u)*4;
+      const sd = srcData.data;
+      dstData.data[di]   = sd[i00]*w00 + sd[i10]*w10 + sd[i01]*w01 + sd[i11]*w11;
+      dstData.data[di+1] = sd[i00+1]*w00 + sd[i10+1]*w10 + sd[i01+1]*w01 + sd[i11+1]*w11;
+      dstData.data[di+2] = sd[i00+2]*w00 + sd[i10+2]*w10 + sd[i01+2]*w01 + sd[i11+2]*w11;
+      dstData.data[di+3] = 255;
+    }
+  }
+  dstCtx.putImageData(dstData, 0, 0);
+}
+
+// ── Strip detectie: helder masker + connected components + PCA ─
+
+function buildBrightMask(imgData, w, h) {
+  const mask = new Uint8Array(w*h);
+  const d = imgData.data;
+  for (let i = 0; i < w*h; i++)
+    mask[i] = Math.min(d[i*4], d[i*4+1], d[i*4+2]) > 190 ? 1 : 0;
+  return mask;
+}
+
+function labelComponents(mask, w, h) {
+  const labels = new Int32Array(w*h).fill(-1);
+  const parent = [];
+  function find(x) {
+    while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+    return x;
+  }
+  function union(a, b) { a=find(a); b=find(b); if (a!==b) parent[b]=a; }
+  let nextLabel = 0;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y*w+x;
+      if (!mask[i]) continue;
+      const up   = y > 0 ? labels[(y-1)*w+x] : -1;
+      const left = x > 0 ? labels[y*w+x-1]   : -1;
+      if (up < 0 && left < 0) {
+        labels[i] = nextLabel; parent.push(nextLabel); nextLabel++;
+      } else if (up < 0) {
+        labels[i] = left;
+      } else if (left < 0) {
+        labels[i] = up;
+      } else {
+        labels[i] = up; union(up, left);
+      }
+    }
+  }
+  for (let i = 0; i < w*h; i++)
+    if (labels[i] >= 0) labels[i] = find(labels[i]);
+  return { labels, count: nextLabel };
+}
+
+function computePCA(pixels) {
+  const n = pixels.length;
+  let mx=0, my=0;
+  for (const p of pixels) { mx+=p.x; my+=p.y; }
+  mx/=n; my/=n;
+  let cxx=0, cxy=0, cyy=0;
+  for (const p of pixels) {
+    const dx=p.x-mx, dy=p.y-my;
+    cxx+=dx*dx; cxy+=dx*dy; cyy+=dy*dy;
+  }
+  cxx/=n; cxy/=n; cyy/=n;
+  const trace=cxx+cyy, det=cxx*cyy-cxy*cxy;
+  const disc=Math.sqrt(Math.max(0,trace*trace/4-det));
+  const l1=trace/2+disc, l2=trace/2-disc;
+  let ax, ay;
+  if (Math.abs(cxy) > 1e-6) { ax=l1-cyy; ay=cxy; }
+  else { ax=1; ay=0; }
+  const len=Math.sqrt(ax*ax+ay*ay); ax/=len; ay/=len;
+  return { cx:mx, cy:my, l1, l2, ax, ay, aspectRatio: l2>1e-6 ? Math.sqrt(l1/l2) : 999 };
+}
+
+function getOrientedCorners(pixels, pca) {
+  const {cx,cy,ax,ay}=pca, bx=-ay, by=ax;
+  let minA=Infinity, maxA=-Infinity, minB=Infinity, maxB=-Infinity;
+  for (const p of pixels) {
+    const dx=p.x-cx, dy=p.y-cy;
+    const a=dx*ax+dy*ay, b=dx*bx+dy*by;
+    if (a<minA) minA=a; if (a>maxA) maxA=a;
+    if (b<minB) minB=b; if (b>maxB) maxB=b;
+  }
+  return [
+    {x:cx+minA*ax+minB*bx, y:cy+minA*ay+minB*by},
+    {x:cx+maxA*ax+minB*bx, y:cy+maxA*ay+minB*by},
+    {x:cx+maxA*ax+maxB*bx, y:cy+maxA*ay+maxB*by},
+    {x:cx+minA*ax+maxB*bx, y:cy+minA*ay+maxB*by},
+  ];
+}
+
+function detectStrip(imgData, w, h) {
+  const totalPixels = w*h;
+  const mask = buildBrightMask(imgData, w, h);
+  const {labels, count} = labelComponents(mask, w, h);
+
+  // Pass 1: tel pixels + bbox per component
+  const compCount = new Int32Array(count);
+  const compBBox  = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const L = labels[y*w+x];
+      if (L < 0) continue;
+      compCount[L]++;
+      if (!compBBox[L]) compBBox[L] = {x1:x,y1:y,x2:x,y2:y};
+      else {
+        const bb=compBBox[L];
+        if (x<bb.x1) bb.x1=x; if (x>bb.x2) bb.x2=x;
+        if (y<bb.y1) bb.y1=y; if (y>bb.y2) bb.y2=y;
+      }
+    }
+  }
+
+  // Pre-filter: goedkope poort op oppervlak + bbox aspectratio
+  const candidates = new Set();
+  for (let L = 0; L < count; L++) {
+    const n = compCount[L]; if (!n) continue;
+    const frac = n/totalPixels;
+    if (frac < 0.005 || frac > 0.30) continue;
+    const bb = compBBox[L]; if (!bb) continue;
+    const bbW=bb.x2-bb.x1+1, bbH=bb.y2-bb.y1+1;
+    const bbAR=Math.max(bbW,bbH)/Math.max(1,Math.min(bbW,bbH));
+    if (bbAR < 3.0) continue;
+    candidates.add(L);
+  }
+  if (!candidates.size) return null;
+
+  // Pass 2: verzamel pixels (stride 2 voor geheugen)
+  const compPixels = new Map();
+  for (const L of candidates) compPixels.set(L, []);
+  for (let y = 0; y < h; y += 2) {
+    for (let x = 0; x < w; x += 2) {
+      const L = labels[y*w+x];
+      if (L >= 0 && candidates.has(L)) compPixels.get(L).push({x,y});
+    }
+  }
+
+  // PCA + score per kandidaat
+  let best=null, bestScore=-1;
+  for (const [L, pixels] of compPixels) {
+    if (pixels.length < 10) continue;
+    const pca = computePCA(pixels);
+    if (pca.aspectRatio < 4.0) continue;
+    const bb = compBBox[L];
+    const bbW=bb.x2-bb.x1+1, bbH=bb.y2-bb.y1+1;
+    const fill = compCount[L]/(bbW*bbH);
+    const score = pca.aspectRatio * fill;
+    if (score > bestScore) { bestScore=score; best={pca,pixels,label:L}; }
+  }
+  if (!best) return null;
+  return getOrientedCorners(best.pixels, best.pca);
+}
+
+// ── Kaart detectie: Sobel edges + rasterperiodiciteit ─────────
+
+function buildSobelMag(imgData, w, h) {
+  const mag  = new Float32Array(w*h);
+  const d    = imgData.data;
+  const gray = new Float32Array(w*h);
+  for (let i = 0; i < w*h; i++)
+    gray[i] = 0.299*d[i*4] + 0.587*d[i*4+1] + 0.114*d[i*4+2];
+  for (let y = 1; y < h-1; y++) {
+    for (let x = 1; x < w-1; x++) {
+      const gx = (-gray[(y-1)*w+(x-1)] + gray[(y-1)*w+(x+1)]
+                  -2*gray[y*w+(x-1)]   + 2*gray[y*w+(x+1)]
+                  -gray[(y+1)*w+(x-1)] + gray[(y+1)*w+(x+1)]);
+      const gy = (-gray[(y-1)*w+(x-1)] - 2*gray[(y-1)*w+x] - gray[(y-1)*w+(x+1)]
+                  +gray[(y+1)*w+(x-1)] + 2*gray[(y+1)*w+x] + gray[(y+1)*w+(x+1)]);
+      mag[y*w+x] = Math.sqrt(gx*gx + gy*gy);
+    }
+  }
+  return mag;
+}
+
+function scoreGridPeriodicity(sobel, w, x0, y0, rw, rh) {
+  const colSums = new Float32Array(rw);
+  const rowSums = new Float32Array(rh);
+  for (let y = 0; y < rh; y++) {
+    for (let x = 0; x < rw; x++) {
+      const val = sobel[(y0+y)*w+(x0+x)];
+      colSums[x] += val;
+      rowSums[y] += val;
+    }
+  }
+  function axiScore(arr) {
+    const n = arr.length; if (n < 4) return 0;
+    let sum=0; for (const v of arr) sum+=v;
+    const mean=sum/n;
+    let vr=0; for (const v of arr) vr+=(v-mean)**2;
+    const std=Math.sqrt(vr/n);
+    const thresh=mean+0.5*std;
+    const peaks=[];
+    for (let i=1; i<n-1; i++)
+      if (arr[i]>thresh && arr[i]>=arr[i-1] && arr[i]>=arr[i+1]) peaks.push(i);
+    if (peaks.length < 2) return peaks.length*0.1;
+    const sp=[]; for (let i=1; i<peaks.length; i++) sp.push(peaks[i]-peaks[i-1]);
+    let sm=0; for (const s of sp) sm+=s; sm/=sp.length;
+    let sv=0; for (const s of sp) sv+=(s-sm)**2;
+    const sStd=Math.sqrt(sv/sp.length);
+    const reg=sm>0 ? Math.max(0,1-sStd/sm) : 0;
+    return peaks.length * reg;
+  }
+  return axiScore(colSums) * axiScore(rowSums);
+}
+
+function detectChart(imgData, w, h) {
+  const sobel   = buildSobelMag(imgData, w, h);
+  const scales  = [0.10, 0.18, 0.28, 0.42];
+  let best=null, bestScore=1.0; // drempelwaarde
+
+  for (const scale of scales) {
+    const rh = Math.round(h*scale);
+    const rw = Math.round(rh*1.5); // 3:2 landscape
+    if (rw >= w || rh >= h || rw < 8 || rh < 8) continue;
+    const stepX = Math.max(1, Math.round(rw*0.40));
+    const stepY = Math.max(1, Math.round(rh*0.40));
+    for (let y0 = 0; y0+rh <= h; y0 += stepY) {
+      for (let x0 = 0; x0+rw <= w; x0 += stepX) {
+        const score = scoreGridPeriodicity(sobel, w, x0, y0, rw, rh);
+        if (score > bestScore) { bestScore=score; best={x0,y0,rw,rh}; }
+      }
+    }
+  }
+  if (!best) return null;
+  const {x0,y0,rw,rh}=best;
+  return [{x:x0,y:y0},{x:x0+rw,y:y0},{x:x0+rw,y:y0+rh},{x:x0,y:y0+rh}];
+}
+
+// ── Detectie overlay op foto tekenen ─────────────────────────
+function showDetectionOverlay(stripCorners, chartCorners) {
+  const overlay = document.getElementById('roi-overlay');
+  if (!overlay) return;
+  const ctx = overlay.getContext('2d');
+  const s   = DISPLAY_SCALE;
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+  function drawPoly(corners, stroke, fill) {
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x*s, corners[0].y*s);
+    for (let i=1; i<corners.length; i++) ctx.lineTo(corners[i].x*s, corners[i].y*s);
+    ctx.closePath();
+    ctx.strokeStyle=stroke; ctx.lineWidth=2.5; ctx.fillStyle=fill;
+    ctx.fill(); ctx.stroke();
+  }
+  if (stripCorners) drawPoly(stripCorners, '#c89600', 'rgba(200,150,0,.12)');
+  if (chartCorners) drawPoly(chartCorners, '#009eb0', 'rgba(0,158,176,.12)');
+}
+
+// ── Detectie mislukt: toon foutmelding + fallback knop ────────
+function showDetectionFailure(stripFailed, chartFailed) {
+  const status = document.getElementById('roi-status');
+  const fallback = document.getElementById('manual-fallback-btn');
+  let msg = '⚠️ ';
+  if (stripFailed && chartFailed)   msg += 'Strip en kaart niet gevonden.';
+  else if (stripFailed)             msg += 'Teststrip niet gevonden.';
+  else if (chartFailed)             msg += 'Kleurenkaart niet gevonden.';
+  else                              msg += 'Detectie onvolledig.';
+  msg += ' Gebruik handmatig aanpassen.';
+  if (status)   status.textContent = msg;
+  if (fallback) fallback.style.display = '';
+}
+
+// ── Handmatige ROI activeren (fallback) ──────────────────────
+function enableManualROI() {
+  AUTO_DETECT_DONE = false;
+  STRIP_WARPED_CTX = null;
+  CHART_WARPED_CTX = null;
+  ROI = { strip: null, chart: null };
+
+  const fallback  = document.getElementById('manual-fallback-btn');
+  const manCtrl   = document.getElementById('manual-roi-controls');
+  const adjCtrl   = document.getElementById('adjust-controls');
+  if (fallback)  fallback.style.display  = 'none';
+  if (manCtrl)   manCtrl.style.display   = '';
+  if (adjCtrl)   adjCtrl.style.display   = '';
+
+  updateROIStatus();
+  renderROIOverlay();
+}
+
+// ── Hoofdorchestrator auto-detectie ──────────────────────────
+async function autoDetect() {
+  if (!ANALYZE_IMG) return;
+  const spinner = document.getElementById('detect-spinner');
+  if (spinner) spinner.style.display = 'flex';
+
+  await new Promise(r => setTimeout(r, 20)); // laat UI updaten
+
+  try {
+    // Schaal naar 50% voor snellere detectie
+    const scale = 0.5;
+    const dw = Math.round(ANALYZE_IMG.naturalWidth  * scale);
+    const dh = Math.round(ANALYZE_IMG.naturalHeight * scale);
+    const tmp = document.createElement('canvas');
+    tmp.width=dw; tmp.height=dh;
+    tmp.getContext('2d').drawImage(ANALYZE_IMG, 0, 0, dw, dh);
+    const imgData = tmp.getContext('2d').getImageData(0, 0, dw, dh);
+
+    const strip50 = detectStrip(imgData, dw, dh);
+    const chart50 = detectChart(imgData, dw, dh);
+
+    const sb = 1/scale;
+    const stripCorners = strip50 ? strip50.map(p=>({x:p.x*sb,y:p.y*sb})) : null;
+    const chartCorners = chart50 ? chart50.map(p=>({x:p.x*sb,y:p.y*sb})) : null;
+
+    // Toon gedetecteerde contouren (ook bij gedeeltelijk resultaat)
+    showDetectionOverlay(stripCorners, chartCorners);
+
+    if (!stripCorners && !chartCorners) {
+      showDetectionFailure(true, true);
+      return;
+    }
+
+    // Full-res source canvas (hergebruik)
+    if (!_ANALYSIS_WC) {
+      _ANALYSIS_WC = document.createElement('canvas');
+      _ANALYSIS_WC.width  = ANALYZE_IMG.naturalWidth;
+      _ANALYSIS_WC.height = ANALYZE_IMG.naturalHeight;
+      _ANALYSIS_WC.getContext('2d').drawImage(ANALYZE_IMG, 0, 0);
+    }
+
+    // Warp strip naar 100×400
+    if (stripCorners) {
+      const dst = [{x:0,y:0},{x:100,y:0},{x:100,y:400},{x:0,y:400}];
+      const H   = computeHomography(orderCorners(stripCorners), dst);
+      if (H) {
+        const wc = document.createElement('canvas');
+        wc.width=100; wc.height=400;
+        STRIP_WARPED_CTX = wc.getContext('2d');
+        applyHomography(_ANALYSIS_WC, STRIP_WARPED_CTX, 100, 400, H);
+      }
+    }
+
+    // Warp kaart naar 360×240
+    if (chartCorners) {
+      const dst = [{x:0,y:0},{x:360,y:0},{x:360,y:240},{x:0,y:240}];
+      const H   = computeHomography(orderCorners(chartCorners), dst);
+      if (H) {
+        const wc = document.createElement('canvas');
+        wc.width=360; wc.height=240;
+        CHART_WARPED_CTX = wc.getContext('2d');
+        applyHomography(_ANALYSIS_WC, CHART_WARPED_CTX, 360, 240, H);
+      }
+    }
+
+    AUTO_DETECT_DONE = !!(STRIP_WARPED_CTX && CHART_WARPED_CTX);
+
+    if (AUTO_DETECT_DONE) {
+      const analyseBtn = document.getElementById('roi-analyse-btn');
+      if (analyseBtn) analyseBtn.disabled = false;
+      const status = document.getElementById('roi-status');
+      if (status) status.textContent = 'Strip en kaart gevonden — klik Analyseer';
+      const adjCtrl = document.getElementById('adjust-controls');
+      if (adjCtrl) adjCtrl.style.display = '';
+      const fallback = document.getElementById('manual-fallback-btn');
+      if (fallback) fallback.style.display = '';
+    } else {
+      showDetectionFailure(!STRIP_WARPED_CTX, !CHART_WARPED_CTX);
+    }
+  } catch(e) {
+    console.error('autoDetect error:', e);
+    showDetectionFailure(true, true);
+  } finally {
+    if (spinner) spinner.style.display = 'none';
+  }
+}
+
+// ── Analyse op ge-warpte canvassen ────────────────────────────
+async function runAnalysisWarped() {
+  const status = document.getElementById('ai-status');
+  status.innerHTML = '<div class="loading-block"><div class="sp"></div><p style="margin-top:6px;font-size:13px">Analyseren...</p></div>';
+
+  const wCtx = STRIP_WARPED_CTX;
+  const cCtx = CHART_WARPED_CTX;
+  const sr   = WARPED_STRIP_ROI;
+  const cr   = WARPED_CHART_ROI;
+
+  // Pad-regio detecteren op rechtgetrokken strip
+  const padInfo = detectPadRegion(wCtx, sr);
+  if (padInfo.error) {
+    status.innerHTML = `<div style="color:var(--bad);font-size:13px;padding:8px;background:#fcebeb;border-radius:8px">⚠️ ${padInfo.error}</div>`;
+    return;
+  }
+
+  const manualFlip = document.getElementById('roi-flip')?.checked ?? false;
+  const flip       = padInfo.autoFlip !== manualFlip;
+  const stripVert  = (sr.y2-sr.y1) >= (sr.x2-sr.x1);
+  const totalLen   = stripVert ? (sr.y2-sr.y1) : (sr.x2-sr.x1);
+  const padOffset  = padInfo.startFrac * totalLen;
+  const padRegLen  = (padInfo.endFrac - padInfo.startFrac) * totalLen;
+  const padLen     = padRegLen / 4;
+
+  const padSamples={}, padRects={};
+  STRIP_PAD_ORDER.forEach((key, i) => {
+    const idx = flip ? (3-i) : i;
+    let px, py, pw, ph;
+    if (stripVert) { px=sr.x1; py=sr.y1+padOffset+idx*padLen; pw=sr.x2-sr.x1; ph=padLen; }
+    else           { px=sr.x1+padOffset+idx*padLen; py=sr.y1; pw=padLen; ph=sr.y2-sr.y1; }
+    padSamples[key] = sampleCell(wCtx, px, py, pw, ph);
+    padRects[key]   = {x:px, y:py, w:pw, h:ph};
+  });
+
+  // Referentiekaart samplen (rotation-aware, zelfde als manual pad)
+  const chartSamples={}, chartRects={};
+  const numRows = CHART_LAYOUT.length;
+  CHART_LAYOUT.forEach((row, ri) => {
+    chartSamples[row.key]=[];
+    chartRects[row.key]=[];
+    for (let ci=0; ci<row.cols; ci++) {
+      const rect = getChartCellRect(cr, ri, numRows, ci, row.cols);
+      chartSamples[row.key].push(sampleCell(cCtx, rect.x, rect.y, rect.w, rect.h));
+      chartRects[row.key].push(rect);
+    }
+  });
+
+  // Pad↔referentie vergelijken via ΔE
+  const results={};
+  PARAMS.forEach(p => {
+    const padLab = padSamples[p.key].lab;
+    const refs   = chartSamples[p.key];
+    let bestIdx=0, bestDE=Infinity;
+    const allDE = refs.map((ref,i) => {
+      const d = deltaE(padLab, ref.lab);
+      if (d < bestDE) { bestDE=d; bestIdx=i; }
+      return d;
+    });
+    results[p.key] = {
+      value: p.cells[bestIdx]?.v ?? p.min,
+      bestIdx, bestDE,
+      padSample:padSamples[p.key], padRect:padRects[p.key],
+      refSamples:refs, chartRects:chartRects[p.key], allDE
+    };
+  });
+
+  status.innerHTML = '';
+  const vals={};
+  PARAMS.forEach(p => { vals[p.key] = results[p.key].value; });
+  applyAI(vals);
+
+  renderDebugPanelWarped(results);
+  document.getElementById('debug-details').style.display = 'block';
+}
+
+// ── Debug panel voor warped modus ─────────────────────────────
+function renderDebugPanelWarped(results) {
+  const panel = document.getElementById('debug-panel');
+  if (!panel) return;
+  const lab2str = l => `L${l.L.toFixed(0)} a${l.a.toFixed(0)} b${l.b.toFixed(0)}`;
+
+  panel.innerHTML = PARAMS.map(p => {
+    const r = results[p.key]; if (!r) return '';
+    const val = typeof r.value==='number' && p.dec===1 ? r.value.toFixed(1) : r.value;
+    return `<div class="dbg-row">
+      <div class="dbg-row-title">${p.label}: <strong>${val}</strong> (ΔE ${r.bestDE.toFixed(1)})</div>
+      <div class="dbg-cells">
+        <div class="dbg-cell">
+          <canvas id="dbg-pad-${p.key}" width="44" height="36"
+            style="border:1.5px solid #c89600;border-radius:3px;display:block"></canvas>
+          <div>strip pad</div>
+          <div>${r.padSample.r},${r.padSample.g},${r.padSample.b}</div>
+          <div>${lab2str(r.padSample.lab)}</div>
+        </div>
+        <div style="font-size:14px;color:var(--t3);padding-bottom:22px">→</div>
+        ${r.refSamples.map((ref,i)=>`
+          <div class="dbg-cell">
+            <canvas id="dbg-ref-${p.key}-${i}" width="36" height="28"
+              style="border:1.5px solid ${i===r.bestIdx?'var(--g)':'transparent'};border-radius:3px;display:block"></canvas>
+            <div>${p.cells[i]?.v??''}</div>
+            <div style="color:${i===r.bestIdx?'var(--g)':'var(--t3)'}">ΔE ${r.allDE[i].toFixed(1)}</div>
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }).join('');
+
+  requestAnimationFrame(() => {
+    function cropTo(id, srcCanvas, sr) {
+      const c = document.getElementById(id); if (!c) return;
+      c.getContext('2d').drawImage(srcCanvas,
+        Math.round(sr.x), Math.round(sr.y),
+        Math.max(1,Math.round(sr.w)), Math.max(1,Math.round(sr.h)),
+        0, 0, c.width, c.height);
+    }
+    PARAMS.forEach(p => {
+      const r = results[p.key]; if (!r) return;
+      cropTo('dbg-pad-'+p.key, STRIP_WARPED_CTX.canvas, r.padSample.sr);
+      r.refSamples.forEach((ref,i) => cropTo('dbg-ref-'+p.key+'-'+i, CHART_WARPED_CTX.canvas, ref.sr));
+    });
+  });
 }
 
 boot();
