@@ -528,34 +528,34 @@ function aiStrip(): void {
     if (!$b64) respond(['error' => 'Geen afbeelding'], 400);
 
     $prompt = <<<'PROMPT'
-You are analyzing a pool water test strip photo.
+You are reading a pool water test strip photo that shows both the test strip and an Aquachek reference color chart on a bottle.
 
-Find and return bounding boxes for exactly 5 things. Do NOT interpret colors or give values.
+STRIP ORIENTATION:
+The strip has a plain white HANDLE end — a longer blank section with no colored pad.
+Count pads starting FROM the handle:
+  pad 1 nearest handle  = STABILIZER
+  pad 2                 = TOTAL ALKALINITY
+  pad 3                 = FREE CHLORINE
+  pad 4 farthest handle = pH (END PAD)
 
-1. THE STRIP
-   A narrow white plastic stick (~3–8% of image width) with 4 small colored pads
-   and a plain white handle end (longer blank section, no pad).
-   → "strip_bbox": tight box around the ENTIRE strip (all pads + handle included)
+YOUR TASK:
+For each of the 4 pads, look at its actual color in this photo, then find the matching labeled row on the reference chart on the bottle, and compare the pad color directly against the color cells in that row. Pick the cell whose color most closely matches the pad. Return the numeric value printed on that cell.
 
-2. FOUR COLOR CHART ROWS on the Aquachek bottle
-   The bottle may be upright, rotated 90°, or upside down.
-   Identify each row by its printed text label:
-   → "ph_row":       the "pH (END PAD)" row — 5 colored squares
-   → "chlorine_row": the "ppm FREE CHLORINE" row — 6 colored squares
-   → "alk_row":      the "ppm TOTAL ALKALINITY" row — 6 colored squares
-   → "stab_row":     the "ppm STABILIZER (PAD NEAREST HANDLE)" row — 5 colored squares
+The bottle may be upright, rotated, or upside down — read the labels to orient yourself.
 
-   Each row bbox must cover ONLY the colored squares — not text labels, not arrows.
+Valid values per parameter:
+  pH:         6.2 / 6.8 / 7.2 / 7.8 / 8.4
+  chlorine:   0 / 0.5 / 1 / 3 / 5 / 10
+  alkalinity: 0 / 40 / 80 / 120 / 180 / 240
+  stabilizer: 0 / 40 / 100 / 150 / 300
 
 Return ONLY valid JSON, no markdown, no explanation:
 {
-  "strip_bbox":   [x1,y1,x2,y2],
-  "ph_row":       [x1,y1,x2,y2],
-  "chlorine_row": [x1,y1,x2,y2],
-  "alk_row":      [x1,y1,x2,y2],
-  "stab_row":     [x1,y1,x2,y2]
+  "ph":         7.2,
+  "chlorine":   3.0,
+  "alkalinity": 40,
+  "stabilizer": 40
 }
-All values are % of the FULL image dimensions (0–100). x1<x2, y1<y2.
 PROMPT;
 
     $payload = json_encode([
@@ -591,11 +591,10 @@ PROMPT;
     if (!$v) respond(['error' => 'Ongeldige AI response'], 422);
 
     respond([
-        'strip_bbox'   => $v['strip_bbox']   ?? null,
-        'ph_row'       => $v['ph_row']       ?? null,
-        'chlorine_row' => $v['chlorine_row'] ?? null,
-        'alk_row'      => $v['alk_row']      ?? null,
-        'stab_row'     => $v['stab_row']     ?? null,
+        'ph'         => min(8.4, max(6.2, round((float)($v['ph']         ?? 6.2), 1))),
+        'chlorine'   => min(10,  max(0,   round((float)($v['chlorine']   ?? 0),   1))),
+        'alkalinity' => min(240, max(0,   (int)($v['alkalinity']         ?? 0))),
+        'stabilizer' => min(300, max(0,   (int)($v['stabilizer']         ?? 0))),
     ]);
 }
 
