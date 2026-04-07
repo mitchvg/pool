@@ -89,8 +89,25 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 .tabs{display:flex;background:#f0f0ee;border-radius:var(--rs);padding:3px;margin-bottom:1.25rem;gap:2px}
 .tab{flex:1;padding:8px;text-align:center;font-size:13px;font-weight:600;border-radius:8px;cursor:pointer;border:none;background:none;color:var(--t2)}
 .tab.on{background:var(--s);color:var(--gd);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+/* Registratie / uitnodiging */
+.code-big{font-size:28px;font-weight:800;letter-spacing:.2em;color:var(--gd);text-align:center;padding:.75rem;background:var(--gl);border-radius:var(--rs);margin:.75rem 0}
+.qr-wrap{text-align:center;margin:.75rem 0}
+.qr-wrap img,.qr-wrap canvas{border-radius:8px;border:1px solid var(--bd)}
+.share-row{display:flex;gap:8px;justify-content:center;margin-top:.5rem;flex-wrap:wrap}
+.share-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:var(--rs);font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid var(--bd);background:#fff;color:var(--t)}
+.share-btn.wa{background:#25D366;color:#fff;border-color:#25D366}
+.share-btn.mail{background:#4A90D9;color:#fff;border-color:#4A90D9}
+.role-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;margin-left:6px}
+.role-owner{background:#f3e8ff;color:#6b21a8}
+.role-technician{background:var(--gl);color:var(--gd)}
+.role-viewer{background:#f0f0f0;color:#555}
+.or-divider{text-align:center;color:var(--t3);font-size:12px;margin:.75rem 0;position:relative}
+.or-divider::before,.or-divider::after{content:'';position:absolute;top:50%;width:42%;height:1px;background:var(--bd)}
+.or-divider::before{left:0}.or-divider::after{right:0}
+.invite-section{border-top:1px solid var(--bd);padding-top:1rem;margin-top:.75rem}
 </style>
 </head>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <body>
 
 <div class="hdr" id="hdr">
@@ -106,8 +123,9 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;heigh
 
 <script>
 const API = 'api.php';
-let USER    = null;
-let ZWEMBAD = null;
+let USER      = null;
+let ZWEMBAD   = null;
+let USER_ROLE = null; // rol van USER voor het huidige ZWEMBAD
 let AI_RESULT = null;
 let AI_IMG    = null;
 const extraPhotos = { strip: '', chem: '', pool: '' };
@@ -132,11 +150,31 @@ async function call(action, method = 'GET', body = null) {
 // ── Boot ──────────────────────────────────────────────────────
 async function boot() {
   const p          = new URLSearchParams(location.search);
+  const inviteToken = p.get('invite');
   const userToken  = p.get('m') || getParam('m');
+  const userCode   = p.get('uc') || getParam('uc');
   const poolToken  = p.get('k') || getParam('k');
   const poolCode   = (p.get('c') || '').toUpperCase();
 
-  if (userToken) {
+  // Uitnodigingsflow
+  if (inviteToken) {
+    render('invite', inviteToken);
+    return;
+  }
+
+  // User ophalen via code (nieuw) of magic token (oud/compat)
+  if (userCode) {
+    try {
+      const d = await call('login_user_code', 'POST', { user_code: userCode });
+      USER = d.user;
+      if (d.magic_token) saveParam('m', d.magic_token);
+      saveParam('uc', userCode);
+      // Sync role wanneer ZWEMBAD al bekend is
+      if (d.pools) {
+        window._USER_POOLS = d.pools;
+      }
+    } catch (e) { clearParam('uc'); }
+  } else if (userToken) {
     try {
       const d = await call('get_user&token=' + encodeURIComponent(userToken));
       USER = d.user;
@@ -155,15 +193,22 @@ async function boot() {
     } catch (e) { /* 403 of 404: zwembad niet laden */ }
   }
 
+  // Bepaal rol van user voor dit zwembad
+  if (USER && ZWEMBAD && window._USER_POOLS) {
+    const match = window._USER_POOLS.find(p => p.id === ZWEMBAD.id || p.qr_token === ZWEMBAD.qr_token);
+    USER_ROLE = match ? match.role : 'technician';
+  }
+
   render();
 }
 
 // ── Render ────────────────────────────────────────────────────
-function render() {
+function render(mode, arg) {
   const app = document.getElementById('app');
-  if      (!USER && !ZWEMBAD)  renderLanding(app);
-  else if (ZWEMBAD && !USER)   renderPublic(app);
-  else if (USER && !ZWEMBAD)   renderChoose(app);
+  if (mode === 'invite')        renderInvite(arg, app);
+  else if (!USER && !ZWEMBAD)   renderLanding(app);
+  else if (ZWEMBAD && !USER)    renderPublic(app);
+  else if (USER && !ZWEMBAD)    renderChoose(app);
   else                          renderFull(app);
 }
 
@@ -171,17 +216,30 @@ function render() {
 function renderLanding(app) {
   setHdr('PoolCheck Pro', '');
   app.innerHTML = `
-    <div class="state">
+    <div class="state" style="padding:2rem 1.5rem">
       <div class="state-icon">💧</div>
       <div class="state-title">PoolCheck Pro</div>
-      <div class="state-sub">Scan de QR-code op het zwembad of open jouw persoonlijke link.</div>
+      <div class="state-sub">Scan de QR-code op het zwembad, of log in met jouw codes.</div>
     </div>
     <div class="card">
-      <h2>Zoek op poolcode</h2>
-      <div class="fg"><label>Poolcode (op de QR-sticker)</label>
-        <input class="code-input" id="ci" maxlength="6" placeholder="PA0" oninput="this.value=this.value.toUpperCase()">
+      <h2>Inloggen</h2>
+      <div class="fg">
+        <label>Poolcode</label>
+        <input class="code-input" id="ci" maxlength="8" placeholder="PXXXXX" oninput="this.value=this.value.toUpperCase()">
       </div>
-      <button class="btn" onclick="lookupCode('ci')">Zoeken</button>
+      <div class="fg">
+        <label>Gebruikerscode <span style="font-weight:400;color:var(--t3)">(optioneel)</span></label>
+        <input class="code-input" id="ui" maxlength="8" placeholder="UXXXXX" oninput="this.value=this.value.toUpperCase()">
+      </div>
+      <button class="btn" onclick="loginWithCodes()">Inloggen</button>
+    </div>
+    <div class="card">
+      <h2>Nieuw aanmelden</h2>
+      <p style="font-size:13px;color:var(--t2);margin-bottom:.75rem">Maak gratis een account aan en voeg je zwembad toe.</p>
+      <div class="fg"><label>Naam *</label><input id="reg-name" placeholder="Jan de Vries"></div>
+      <div class="fg"><label>E-mail <span style="font-weight:400;color:var(--t3)">(optioneel)</span></label><input id="reg-email" type="email" placeholder="jan@email.com"></div>
+      <div class="fg"><label>Telefoon <span style="font-weight:400;color:var(--t3)">(optioneel)</span></label><input id="reg-phone" type="tel" placeholder="+31 6 12345678"></div>
+      <button class="btn btn-out" onclick="registerUser()">Aanmelden</button>
     </div>`;
 }
 
@@ -191,11 +249,19 @@ function renderPublic(app) {
   app.innerHTML = `
     <div class="pub-info">Publieke weergave — laatste testresultaat</div>
     <div id="pub-last"><div class="loading-block"><div class="sp"></div></div></div>
-    <div class="card" style="text-align:center">
-      <p style="font-size:13px;color:var(--t2);margin-bottom:12px">Monteur? Gebruik jouw persoonlijke link voor volledige toegang.</p>
-      <div class="fg"><input id="ut-in" placeholder="Plak jouw toegangslink hier..."></div>
-      <button class="btn btn-out" onclick="applyUserToken()">Inloggen</button>
-    </div>`;
+    <div class="card">
+      <h2>Inloggen met gebruikerscode</h2>
+      <div class="fg">
+        <label>Gebruikerscode</label>
+        <input class="code-input" id="ut-in" maxlength="8" placeholder="UXXXXX" oninput="this.value=this.value.toUpperCase()">
+      </div>
+      <button class="btn btn-out" onclick="applyUserCode()">Inloggen</button>
+      <p style="font-size:12px;color:var(--t3);margin-top:.75rem;text-align:center">
+        Nog geen code?
+        <a href="#" style="color:var(--g)" onclick="event.preventDefault();showRegisterInline()">Aanmelden</a>
+      </p>
+    </div>
+    <div id="reg-inline" style="display:none"></div>`;
   loadPublicLast();
 }
 
@@ -214,48 +280,91 @@ async function loadPublicLast() {
   } catch (e) { el.innerHTML = ''; }
 }
 
-function applyUserToken() {
-  let raw = document.getElementById('ut-in').value.trim();
-  try { raw = new URL(raw).searchParams.get('m') || raw; } catch(e) {}
-  if (!raw) return;
-  saveParam('m', raw);
-  location.href = '?m=' + encodeURIComponent(raw) + '&k=' + encodeURIComponent(getParam('k'));
+function showRegisterInline() {
+  const el = document.getElementById('reg-inline');
+  if (!el) return;
+  el.style.display = 'block';
+  el.innerHTML = `<div class="card">
+    <h2>Aanmelden</h2>
+    <div class="fg"><label>Naam *</label><input id="reg2-name" placeholder="Jan de Vries"></div>
+    <div class="fg"><label>E-mail</label><input id="reg2-email" type="email"></div>
+    <button class="btn" onclick="registerUser('reg2-name','reg2-email','','pub')">Aanmelden</button>
+  </div>`;
+}
+
+async function applyUserCode() {
+  const code = (document.getElementById('ut-in')?.value || '').trim().toUpperCase();
+  if (!code.startsWith('U') || code.length < 4) return toast('Voer een geldige gebruikerscode in (bijv. UXXXXX)', true);
+  try {
+    const d = await call('login_user_code', 'POST', { user_code: code });
+    USER = d.user;
+    saveParam('uc', code);
+    if (d.magic_token) saveParam('m', d.magic_token);
+    if (d.pools) window._USER_POOLS = d.pools;
+    // Bepaal rol voor huidig zwembad
+    if (ZWEMBAD && d.pools) {
+      const match = d.pools.find(p => p.id === ZWEMBAD.id || p.qr_token === ZWEMBAD.qr_token);
+      USER_ROLE = match ? match.role : 'technician';
+    }
+    render();
+  } catch(e) { toast(e.message, true); }
 }
 
 // ── State 3: user bekend, geen zwembad ───────────────────────
+const ROLE_LABEL = { owner: 'Eigenaar', technician: 'Monteur', viewer: 'Bekijken' };
+const ROLE_CLASS = { owner: 'role-owner', technician: 'role-technician', viewer: 'role-viewer' };
+
 async function renderChoose(app) {
   setHdr('Hallo, ' + USER.name, 'Kies een zwembad');
   app.innerHTML = '<div class="loading-block"><div class="sp"></div></div>';
   try {
-    const d = await call('my_zwembaden&user_token=' + encodeURIComponent(getParam('m')));
-    const zz = d.zwembaden || [];
-    if (!zz.length) {
-      app.innerHTML = `<div class="state"><div class="state-icon">🏊</div><div class="state-title">Geen zwembaden</div>
-        <div class="state-sub">Je bent nog niet gekoppeld aan een zwembad. Vraag de beheerder.</div></div>`;
-      return;
-    }
+    const pools = window._USER_POOLS || (await call('my_zwembaden&user_token=' + encodeURIComponent(getParam('m')))).zwembaden || [];
+    const poolRows = pools.map(z => {
+      const rLabel = ROLE_LABEL[z.role] || z.role || 'Monteur';
+      const rClass = ROLE_CLASS[z.role] || 'role-technician';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid var(--bd)">
+        <div>
+          <div style="font-weight:600">${esc(z.name)}<span class="role-badge ${rClass}">${rLabel}</span></div>
+          <div style="font-size:12px;color:var(--t3)">${esc(z.code)} · ${esc(z.address||'')}</div>
+        </div>
+        <button class="btn btn-sm" onclick="pickZwembad('${esc(z.qr_token)}','${esc(z.role||'technician')}')">Kies</button>
+      </div>`;
+    }).join('');
+
     app.innerHTML = `
-      <div class="card"><h2>Kies een zwembad</h2>${zz.map(z => `
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid var(--bd)">
-          <div><div style="font-weight:600">${esc(z.name)}</div>
-          <div style="font-size:12px;color:var(--t3)">${esc(z.code)} · ${esc(z.address||'')}</div></div>
-          <button class="btn btn-sm" onclick="pickZwembad('${esc(z.qr_token)}')">Kies</button>
-        </div>`).join('')}
+      <div class="card">
+        <h2>Mijn zwembaden</h2>
+        ${pools.length ? poolRows : '<p style="color:var(--t3);font-size:13px">Nog geen zwembaden gekoppeld.</p>'}
+      </div>
+      <div class="card">
+        <h2>Zwembad toevoegen</h2>
+        <p style="font-size:13px;color:var(--t2);margin-bottom:.75rem">Voeg jouw eigen zwembad toe en word eigenaar.</p>
+        <div class="fg"><label>Naam zwembad *</label><input id="ap-name" placeholder="Mijn tuin zwembad"></div>
+        <div class="fg"><label>Adres</label><input id="ap-addr" placeholder="Hoofdstraat 1, Amsterdam"></div>
+        <div class="fg"><label>Type</label>
+          <select id="ap-type">
+            <option>Privé buitenbad</option><option>Privé binnenbad</option>
+            <option>Privé spa</option><option>Hotel binnenbad</option><option>Hotel buitenbad</option>
+          </select>
+        </div>
+        <div class="fg"><label>Volume (liter)</label><input id="ap-vol" type="number" placeholder="40000" value="40000"></div>
+        <button class="btn" onclick="doAddMyPool()">Zwembad aanmaken</button>
       </div>
       <div class="card"><h2>Of zoek op poolcode</h2>
-        <div class="fg"><input class="code-input" id="ci2" maxlength="6" placeholder="PA0" oninput="this.value=this.value.toUpperCase()"></div>
+        <div class="fg"><input class="code-input" id="ci2" maxlength="8" placeholder="PXXXXX" oninput="this.value=this.value.toUpperCase()"></div>
         <button class="btn btn-out" onclick="lookupCode('ci2')">Zoeken</button>
       </div>`;
   } catch(e) { app.innerHTML = `<div class="state"><div class="state-sub">Fout: ${esc(e.message)}</div></div>`; }
 }
 
-function pickZwembad(token) {
+function pickZwembad(token, role) {
   saveParam('k', token);
-  location.href = '?m=' + encodeURIComponent(getParam('m')) + '&k=' + encodeURIComponent(token);
+  if (role) saveParam('role', role);
+  location.href = '?k=' + encodeURIComponent(token) + '&uc=' + encodeURIComponent(getParam('uc') || '') + '&m=' + encodeURIComponent(getParam('m') || '');
 }
 
 async function lookupCode(inputId) {
-  const code = document.getElementById(inputId).value.trim();
+  const code = document.getElementById(inputId).value.trim().toUpperCase();
   if (!code) return;
   try {
     const d = await call('zwembad&code=' + encodeURIComponent(code) + '&user_token=' + encodeURIComponent(getParam('m')));
@@ -265,18 +374,56 @@ async function lookupCode(inputId) {
   } catch(e) { toast(e.message.includes('toegang') ? 'Niet publiek — log eerst in.' : 'Niet gevonden.', true); }
 }
 
+async function loginWithCodes() {
+  const poolCode = (document.getElementById('ci')?.value || '').trim().toUpperCase();
+  const userCode = (document.getElementById('ui')?.value || '').trim().toUpperCase();
+  if (!poolCode && !userCode) return toast('Voer minimaal een pool- of gebruikerscode in', true);
+
+  // Log user in als code gegeven
+  if (userCode && userCode.startsWith('U')) {
+    try {
+      const d = await call('login_user_code', 'POST', { user_code: userCode });
+      USER = d.user;
+      saveParam('uc', userCode);
+      if (d.magic_token) saveParam('m', d.magic_token);
+      if (d.pools) window._USER_POOLS = d.pools;
+    } catch(e) { return toast('Gebruikerscode niet gevonden', true); }
+  }
+
+  // Laad pool als code gegeven
+  if (poolCode && poolCode.startsWith('P')) {
+    try {
+      const d = await call('zwembad&code=' + encodeURIComponent(poolCode) + '&user_token=' + encodeURIComponent(getParam('m')));
+      ZWEMBAD = d.zwembad;
+      saveParam('k', ZWEMBAD.qr_token || '');
+      if (USER && window._USER_POOLS) {
+        const match = window._USER_POOLS.find(p => p.id === ZWEMBAD.id);
+        USER_ROLE = match ? match.role : 'technician';
+      }
+    } catch(e) { return toast('Poolcode niet gevonden', true); }
+  }
+
+  render();
+}
+
 // ── State 4: volledige toegang ────────────────────────────────
 function renderFull(app) {
   setHdr(ZWEMBAD.name, USER.name);
+  // Herstel rol uit localStorage als nog niet gezet
+  if (!USER_ROLE) USER_ROLE = getParam('role') || 'technician';
+  const isOwner = USER_ROLE === 'owner';
   app.innerHTML = `
     <div class="tabs">
       <button class="tab on" data-v="form"    onclick="switchTab(this)">Test invoeren</button>
       <button class="tab"    data-v="history" onclick="switchTab(this)">Geschiedenis</button>
+      ${isOwner ? '<button class="tab" data-v="mypool" onclick="switchTab(this)">Mijn zwembad</button>' : ''}
     </div>
     <div id="v-form"></div>
-    <div id="v-history" style="display:none"></div>`;
+    <div id="v-history" style="display:none"></div>
+    ${isOwner ? '<div id="v-mypool" style="display:none"></div>' : ''}`;
   buildForm();
   loadHistory();
+  if (isOwner) buildMyPool();
 }
 
 function switchTab(btn) {
@@ -602,6 +749,261 @@ function toast(msg, err=false) {
   el.textContent = msg; el.style.background = err?'#c0392b':'#111';
   el.classList.add('on'); clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>el.classList.remove('on'), err?5000:3000);
+}
+
+// ── QR code genereren ─────────────────────────────────────────
+function showQR(containerId, url) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  el.innerHTML = '';
+  if (typeof QRCode !== 'undefined') {
+    new QRCode(el, { text: url, width: 160, height: 160, correctLevel: QRCode.CorrectLevel.M });
+  } else {
+    el.innerHTML = `<p style="font-size:11px;word-break:break-all;color:var(--t2)">${esc(url)}</p>`;
+  }
+}
+
+// ── Delen ─────────────────────────────────────────────────────
+function shareLink(url, title, text) {
+  if (navigator.share) {
+    navigator.share({ title: title || 'PoolCheck Pro', text: text || title, url }).catch(() => {});
+  } else {
+    showShareSheet(url, title, text);
+  }
+}
+
+function showShareSheet(url, title, msgText) {
+  const waText = encodeURIComponent((msgText || title || 'PoolCheck Pro') + ': ' + url);
+  const mailSubj = encodeURIComponent(title || 'PoolCheck Pro');
+  const mailBody = encodeURIComponent((msgText || '') + '\n\n' + url);
+  const el = document.getElementById('app');
+  const sheet = document.createElement('div');
+  sheet.id = 'share-sheet';
+  sheet.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:300;display:flex;align-items:flex-end;justify-content:center';
+  sheet.innerHTML = `<div style="background:#fff;border-radius:16px 16px 0 0;padding:1.5rem;width:100%;max-width:480px;padding-bottom:calc(1.5rem + env(safe-area-inset-bottom))">
+    <div style="font-weight:700;font-size:15px;margin-bottom:1rem">${esc(title||'Delen')}</div>
+    <div class="share-row" style="justify-content:flex-start;flex-direction:column;gap:10px">
+      <button class="share-btn wa" style="width:100%" onclick="window.open('https://wa.me/?text=${waText}','_blank')">📱 WhatsApp</button>
+      <button class="share-btn mail" style="width:100%" onclick="location.href='mailto:?subject=${mailSubj}&body=${mailBody}'">✉️ E-mail</button>
+      <button class="share-btn" style="width:100%" onclick="navigator.clipboard?.writeText('${url.replace(/'/g,"\\'")}');toast('Link gekopieerd!');document.getElementById('share-sheet')?.remove()">🔗 Link kopiëren</button>
+    </div>
+    <button class="btn btn-out" style="margin-top:1rem" onclick="document.getElementById('share-sheet')?.remove()">Sluiten</button>
+  </div>`;
+  document.body.appendChild(sheet);
+  sheet.addEventListener('click', e => { if (e.target === sheet) sheet.remove(); });
+}
+
+// ── Registreren ───────────────────────────────────────────────
+async function registerUser(nameId='reg-name', emailId='reg-email', phoneId='', context='landing') {
+  const name  = (document.getElementById(nameId)?.value || '').trim();
+  const email = (document.getElementById(emailId)?.value || '').trim();
+  const phone = phoneId ? (document.getElementById(phoneId)?.value || '').trim() : '';
+  if (name.length < 2) return toast('Vul je naam in (minimaal 2 tekens)', true);
+  try {
+    const d = await call('register', 'POST', { name, email, phone });
+    USER = { id: d.user_id, code: d.user_code, name, roles: 'user' };
+    saveParam('uc', d.user_code);
+    if (d.magic_token) saveParam('m', d.magic_token);
+    window._USER_POOLS = [];
+    renderRegistrationSuccess(d.user_code, name, context);
+  } catch(e) { toast(e.message, true); }
+}
+
+function renderRegistrationSuccess(code, name, context) {
+  const app = document.getElementById('app');
+  setHdr('Welkom, ' + name, 'Account aangemaakt');
+  const profileUrl = location.origin + location.pathname + '?uc=' + code;
+  app.innerHTML = `
+    <div class="card" style="text-align:center">
+      <h2>Jouw gebruikerscode</h2>
+      <p style="font-size:13px;color:var(--t2);margin-bottom:.5rem">Bewaar deze code — je hebt hem nodig om in te loggen.</p>
+      <div class="code-big">${esc(code)}</div>
+      <div class="qr-wrap" id="qr-user"></div>
+      <div class="share-row">
+        <button class="share-btn" onclick="shareLink('${profileUrl}','Mijn PoolCheck code','Mijn gebruikerscode voor PoolCheck Pro is ${code}')">Delen</button>
+        <button class="share-btn" onclick="navigator.clipboard?.writeText('${code}');toast('Code gekopieerd!')">Kopieer code</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Zwembad toevoegen</h2>
+      <p style="font-size:13px;color:var(--t2);margin-bottom:.75rem">Voeg je zwembad toe en word eigenaar.</p>
+      <div class="fg"><label>Naam *</label><input id="np-name" placeholder="Mijn tuin zwembad"></div>
+      <div class="fg"><label>Adres</label><input id="np-addr" placeholder="Hoofdstraat 1"></div>
+      <div class="fg"><label>Type</label>
+        <select id="np-type"><option>Privé buitenbad</option><option>Privé binnenbad</option><option>Privé spa</option><option>Hotel buitenbad</option></select>
+      </div>
+      <div class="fg"><label>Volume (liter)</label><input id="np-vol" type="number" value="40000"></div>
+      <button class="btn" onclick="doAddMyPool('np-name','np-addr','np-type','np-vol')">Zwembad aanmaken</button>
+      <button class="btn btn-out" style="margin-top:8px" onclick="render()">Later doen</button>
+    </div>`;
+  setTimeout(() => showQR('qr-user', profileUrl), 100);
+}
+
+// ── Zwembad toevoegen (eigenaar) ──────────────────────────────
+async function doAddMyPool(nameId='ap-name', addrId='ap-addr', typeId='ap-type', volId='ap-vol') {
+  const name = (document.getElementById(nameId)?.value || '').trim();
+  if (name.length < 2) return toast('Vul een naam in voor het zwembad', true);
+  const token = getParam('uc') || getParam('m') || '';
+  const isCode = token.startsWith('U');
+  const body = {
+    name,
+    address:      document.getElementById(addrId)?.value || '',
+    pool_type:    document.getElementById(typeId)?.value || 'Privé buitenbad',
+    volume_liters: parseInt(document.getElementById(volId)?.value) || 40000,
+    [isCode ? 'user_code' : 'user_token']: token,
+  };
+  try {
+    const d = await call('add_my_pool', 'POST', body);
+    ZWEMBAD = { id: d.id, code: d.code, name, qr_token: d.qr_token, address: body.address };
+    USER_ROLE = 'owner';
+    saveParam('k', d.qr_token);
+    saveParam('role', 'owner');
+    if (!window._USER_POOLS) window._USER_POOLS = [];
+    window._USER_POOLS.push({ id: d.id, code: d.code, name, qr_token: d.qr_token, role: 'owner' });
+    renderPoolSuccess(d.code, d.qr_url, name);
+  } catch(e) { toast(e.message, true); }
+}
+
+function renderPoolSuccess(code, qrUrl, poolName) {
+  const app = document.getElementById('app');
+  setHdr(poolName, 'Zwembad aangemaakt');
+  app.innerHTML = `
+    <div class="card" style="text-align:center">
+      <h2>Jouw poolcode</h2>
+      <p style="font-size:13px;color:var(--t2);margin-bottom:.5rem">Deel deze code of QR met monteurs en gasten.</p>
+      <div class="code-big">${esc(code)}</div>
+      <div class="qr-wrap" id="qr-pool"></div>
+      <div class="share-row">
+        <button class="share-btn wa" onclick="shareLink('${qrUrl}','Bekijk ${poolName}','Scan de QR of gebruik deze link voor ${poolName}: ${qrUrl}')">WhatsApp</button>
+        <button class="share-btn mail" onclick="shareLink('${qrUrl}','${poolName} op PoolCheck','')">E-mail</button>
+        <button class="share-btn" onclick="navigator.clipboard?.writeText('${qrUrl}');toast('Link gekopieerd!')">Kopieer</button>
+      </div>
+    </div>
+    <div class="card" style="text-align:center">
+      <button class="btn" onclick="render()">Doorgaan naar zwembad</button>
+    </div>`;
+  setTimeout(() => showQR('qr-pool', qrUrl), 100);
+}
+
+// ── Eigenaar tab: QR + uitnodigingen ─────────────────────────
+function buildMyPool() {
+  const el = document.getElementById('v-mypool');
+  if (!el) return;
+  const baseUrl = location.origin + location.pathname;
+  const qrUrl = baseUrl + '?k=' + (ZWEMBAD.qr_token || '');
+  el.innerHTML = `
+    <div class="card" style="text-align:center">
+      <h2>QR-code zwembad</h2>
+      <p style="font-size:13px;color:var(--t2);margin-bottom:.5rem">Scan om direct het zwembad te openen.</p>
+      <div class="qr-wrap" id="qr-mypool"></div>
+      <div class="code-big" style="font-size:18px">${esc(ZWEMBAD.code)}</div>
+      <div class="share-row">
+        <button class="share-btn wa" onclick="shareLink('${qrUrl}','${esc(ZWEMBAD.name)}','Bekijk ${esc(ZWEMBAD.name)} via PoolCheck Pro: ${qrUrl}')">WhatsApp</button>
+        <button class="share-btn mail" onclick="shareLink('${qrUrl}','${esc(ZWEMBAD.name)}','')">E-mail</button>
+        <button class="share-btn" onclick="navigator.clipboard?.writeText('${qrUrl}');toast('Link gekopieerd!')">Kopieer</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Uitnodigen</h2>
+      <p style="font-size:13px;color:var(--t2);margin-bottom:.75rem">Maak een uitnodigingslink aan voor een monteur of bekijker.</p>
+      <div class="fg"><label>Rol</label>
+        <select id="inv-role">
+          <option value="technician">Monteur (kan rapporten invoeren)</option>
+          <option value="viewer">Bekijker (alleen lezen)</option>
+        </select>
+      </div>
+      <button class="btn" onclick="doCreateInvite()">Uitnodigingslink maken</button>
+      <div id="invite-result" style="display:none;margin-top:1rem"></div>
+    </div>`;
+  setTimeout(() => showQR('qr-mypool', qrUrl), 100);
+}
+
+async function doCreateInvite() {
+  const role = document.getElementById('inv-role')?.value || 'technician';
+  const token = getParam('uc') || getParam('m') || '';
+  const isCode = token.startsWith('U');
+  try {
+    const d = await call('create_invite', 'POST', {
+      zwembad_id: ZWEMBAD.id,
+      role,
+      [isCode ? 'user_code' : 'user_token']: token,
+    });
+    const el = document.getElementById('invite-result');
+    el.style.display = 'block';
+    el.innerHTML = `
+      <div class="qr-wrap" id="qr-invite"></div>
+      <div style="font-size:11px;color:var(--t3);word-break:break-all;margin:.5rem 0">${esc(d.invite_url)}</div>
+      <p style="font-size:11px;color:var(--t3)">Geldig t/m: ${d.expires_at?.substring(0,10)}</p>
+      <div class="share-row">
+        <button class="share-btn wa" onclick="shareLink('${d.invite_url}','Uitnodiging ${esc(ZWEMBAD.name)}','Je bent uitgenodigd voor ${esc(ZWEMBAD.name)} via PoolCheck Pro: ${d.invite_url}')">WhatsApp</button>
+        <button class="share-btn mail" onclick="shareLink('${d.invite_url}','Uitnodiging ${esc(ZWEMBAD.name)}','')">E-mail</button>
+        <button class="share-btn" onclick="navigator.clipboard?.writeText('${d.invite_url}');toast('Link gekopieerd!')">Kopieer</button>
+      </div>`;
+    setTimeout(() => showQR('qr-invite', d.invite_url), 100);
+  } catch(e) { toast(e.message, true); }
+}
+
+// ── Uitnodiging accepteren ────────────────────────────────────
+function renderInvite(token, app) {
+  setHdr('Uitnodiging', 'Je bent uitgenodigd');
+  app.innerHTML = `
+    <div class="card">
+      <h2>Uitnodiging accepteren</h2>
+      <p style="font-size:13px;color:var(--t2);margin-bottom:1rem">
+        Je bent uitgenodigd om een zwembad te volgen via PoolCheck Pro.
+      </p>
+      <h3 style="font-size:13px;font-weight:600;color:var(--t2);margin-bottom:.5rem">Heb je al een gebruikerscode?</h3>
+      <div class="fg">
+        <input class="code-input" id="inv-existing" maxlength="8" placeholder="UXXXXX"
+               oninput="this.value=this.value.toUpperCase()">
+      </div>
+      <div class="or-divider">of registreer nieuw</div>
+      <div class="fg"><label>Naam *</label><input id="inv-name" placeholder="Jan de Vries"></div>
+      <div class="fg"><label>E-mail <span style="font-weight:400;color:var(--t3)">(optioneel)</span></label><input id="inv-email" type="email"></div>
+      <button class="btn" style="margin-top:.25rem" onclick="doAcceptInvite('${token}')">Uitnodiging accepteren</button>
+    </div>`;
+}
+
+async function doAcceptInvite(invToken) {
+  const existingCode = (document.getElementById('inv-existing')?.value || '').trim().toUpperCase();
+  const name  = (document.getElementById('inv-name')?.value || '').trim();
+  const email = (document.getElementById('inv-email')?.value || '').trim();
+
+  if (!existingCode && name.length < 2) return toast('Voer je naam in of een bestaande gebruikerscode', true);
+
+  const body = { invite_token: invToken };
+  if (existingCode) body.user_code = existingCode;
+  else { body.name = name; body.email = email; }
+
+  try {
+    const d = await call('accept_invite', 'POST', body);
+    USER = { code: d.user_code, name: name || existingCode, roles: 'user' };
+    ZWEMBAD = d.pool;
+    USER_ROLE = d.role || 'technician';
+    saveParam('uc', d.user_code);
+    if (d.magic_token) saveParam('m', d.magic_token);
+    saveParam('k', d.pool.qr_token);
+    saveParam('role', USER_ROLE);
+    // Toon succes met gebruikerscode
+    const app = document.getElementById('app');
+    setHdr('Welkom!', ZWEMBAD.name);
+    const profileUrl = location.origin + location.pathname + '?uc=' + d.user_code;
+    app.innerHTML = `
+      <div class="card" style="text-align:center">
+        <h2>Gekoppeld aan ${esc(ZWEMBAD.name)}</h2>
+        <p style="font-size:13px;color:var(--t2);margin-bottom:.5rem">Bewaar jouw gebruikerscode:</p>
+        <div class="code-big">${esc(d.user_code)}</div>
+        <div class="qr-wrap" id="qr-inv-user"></div>
+        <div class="share-row">
+          <button class="share-btn" onclick="shareLink('${profileUrl}','Mijn PoolCheck code','Mijn gebruikerscode is ${d.user_code}')">Deel mijn code</button>
+          <button class="share-btn" onclick="navigator.clipboard?.writeText('${d.user_code}');toast('Code gekopieerd!')">Kopieer</button>
+        </div>
+      </div>
+      <div class="card" style="text-align:center">
+        <button class="btn" onclick="render()">Naar zwembad</button>
+      </div>`;
+    setTimeout(() => showQR('qr-inv-user', profileUrl), 100);
+  } catch(e) { toast(e.message, true); }
 }
 
 boot();

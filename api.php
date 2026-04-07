@@ -67,43 +67,21 @@ function setMeta(string $key, string $value): void {
         ->execute([$key, $value, $value]);
 }
 
-// ── Code generators ───────────────────────────────────────────
-// Codes: P + 2 alfanumeriek voor zwembaden, U + 2 voor users
-// Volgorde: AA, AB ... AZ, A0 ... A9, BA, BB ... 9Z, 99
-// Uitbreidbaar: als alle 2-char codes vol zijn, wordt het 3-char
+// ── Code generator ────────────────────────────────────────────
+// Genereert willekeurige codes: prefix + 5 tekens uit een veilig alfabet.
+// Geen O/0 of I/1 om verwarring te voorkomen. 32^5 ≈ 33 miljoen mogelijkheden.
 
-function nextCode(string $prefix, string $table, string $col): string {
-    $chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    $len = count_chars($chars, 3); // unused, just for reference
-    $base = strlen($chars); // 36
-
-    // Haal hoogste bestaande code op voor dit prefix
-    $st = db()->prepare("SELECT $col FROM $table WHERE $col LIKE ? ORDER BY LENGTH($col) DESC, $col DESC LIMIT 1");
-    $st->execute([$prefix . '%']);
-    $last = $st->fetchColumn();
-
-    if (!$last) return $prefix . $chars[0] . $chars[0]; // PA of UA
-
-    $suffix = substr($last, strlen($prefix));
-    // Increment suffix als base-36 getal
-    $next = incrementCode($suffix, $chars);
-    return $prefix . $next;
-}
-
-function incrementCode(string $code, string $chars): string {
-    $base = strlen($chars);
-    $pos  = array_flip(str_split($chars));
-    $arr  = array_reverse(str_split($code));
-    $carry = 1;
-
-    for ($i = 0; $i < count($arr) && $carry; $i++) {
-        $val = $pos[$arr[$i]] + $carry;
-        $arr[$i] = $chars[$val % $base];
-        $carry = intdiv($val, $base);
+function randomCode(string $prefix, string $table, string $col): string {
+    $chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    for ($i = 0; $i < 30; $i++) {
+        $suffix = '';
+        for ($j = 0; $j < 5; $j++) $suffix .= $chars[random_int(0, strlen($chars) - 1)];
+        $code = $prefix . $suffix;
+        $st = db()->prepare("SELECT COUNT(*) FROM $table WHERE $col = ?");
+        $st->execute([$code]);
+        if ((int)$st->fetchColumn() === 0) return $code;
     }
-    if ($carry) $arr[] = $chars[0]; // verleng de code
-
-    return implode('', array_reverse($arr));
+    throw new \RuntimeException("randomCode: geen unieke code gevonden na 30 pogingen");
 }
 
 // ── Auto-migratie ─────────────────────────────────────────────
@@ -271,16 +249,54 @@ function autoMigrate(): void {
             error_log("PoolCheck migrate drop legacy FK: " . $e->getMessage());
         }
 
+        // ── Nieuwe kolom-migraties ────────────────────────────────────────────
+        $uzCols = db()->prepare($getColsSql);
+        $uzCols->execute([$dbName, 'user_zwembaden']);
+        $uzCols = $uzCols->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('role', $uzCols)) {
+            db()->exec("ALTER TABLE user_zwembaden ADD COLUMN role VARCHAR(20) DEFAULT 'technician'");
+        }
+
+        $poolCols2 = db()->prepare($getColsSql);
+        $poolCols2->execute([$dbName, 'zwembaden']);
+        $poolCols2 = $poolCols2->fetchAll(PDO::FETCH_COLUMN);
+        if (!in_array('owner_id', $poolCols2)) {
+            db()->exec("ALTER TABLE zwembaden ADD COLUMN owner_id INT NULL");
+        }
+
+        // ── pool_invites tabel ────────────────────────────────────────────────
+        db()->exec("CREATE TABLE IF NOT EXISTS pool_invites (
+            token       VARCHAR(32)  PRIMARY KEY,
+            zwembad_id  INT          NOT NULL,
+            invited_by  INT          NOT NULL,
+            role        VARCHAR(20)  DEFAULT 'technician',
+            expires_at  DATETIME     NOT NULL,
+            used_at     DATETIME     NULL,
+            FOREIGN KEY (zwembad_id) REFERENCES zwembaden(id) ON DELETE CASCADE,
+            FOREIGN KEY (invited_by) REFERENCES users(id)     ON DELETE CASCADE
+        )");
+
         // ── Auto-assign codes aan bestaande records zonder code ───────────────
         $usersNoCodes = db()->query("SELECT id FROM users WHERE code IS NULL ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
         foreach ($usersNoCodes as $uid) {
-            $c = nextCode('U', 'users', 'code');
+            $c = randomCode('U', 'users', 'code');
             db()->prepare("UPDATE users SET code = ? WHERE id = ?")->execute([$c, $uid]);
         }
         $poolsNoCodes = db()->query("SELECT id FROM zwembaden WHERE code IS NULL ORDER BY id")->fetchAll(PDO::FETCH_COLUMN);
         foreach ($poolsNoCodes as $pid) {
-            $c = nextCode('P', 'zwembaden', 'code');
+            $c = randomCode('P', 'zwembaden', 'code');
             db()->prepare("UPDATE zwembaden SET code = ? WHERE id = ?")->execute([$c, $pid]);
+        }
+
+        // ── Eenmalig: randomiseer bestaande korte (≤4 teken) sequentiele codes ─
+        if (!db()->query("SELECT value FROM app_meta WHERE key_name = 'codes_randomized'")->fetchColumn()) {
+            foreach (db()->query("SELECT id, code FROM users WHERE code IS NOT NULL AND LENGTH(code) <= 4")->fetchAll() as $u) {
+                db()->prepare("UPDATE users SET code = ? WHERE id = ?")->execute([randomCode('U', 'users', 'code'), $u['id']]);
+            }
+            foreach (db()->query("SELECT id, code FROM zwembaden WHERE code IS NOT NULL AND LENGTH(code) <= 4")->fetchAll() as $p) {
+                db()->prepare("UPDATE zwembaden SET code = ? WHERE id = ?")->execute([randomCode('P', 'zwembaden', 'code'), $p['id']]);
+            }
+            db()->exec("INSERT INTO app_meta (key_name, value) VALUES ('codes_randomized', '1') ON DUPLICATE KEY UPDATE value='1'");
         }
 
         // Sla nieuwe versie op
@@ -311,6 +327,12 @@ try {
         $action === 'upload_photo'    && $method === 'POST' => uploadPhoto(),
         $action === 'ai_strip'        && $method === 'POST' => aiStrip(),
         $action === 'get_user'        && $method === 'GET'  => getUser(),
+        $action === 'register'        && $method === 'POST' => register(),
+        $action === 'login_user_code' && $method === 'POST' => loginUserCode(),
+        $action === 'add_my_pool'     && $method === 'POST' => addMyPool(),
+        $action === 'create_invite'   && $method === 'POST' => createInvite(),
+        $action === 'accept_invite'   && $method === 'POST' => acceptInvite(),
+        $action === 'transfer_ownership' && $method === 'POST' => transferOwnership(),
 
         // Admin auth
         $action === 'admin_login'     && $method === 'POST' => adminLogin(),
@@ -947,7 +969,7 @@ function addUser(): void {
     $d = input();
     if (empty($d['name'])) respond(['error' => 'Naam vereist'], 400);
 
-    $code  = nextCode('U', 'users', 'code');
+    $code  = randomCode('U', 'users', 'code');
     $token = bin2hex(random_bytes(16));
     $roles = $d['roles'] ?? 'user';
 
@@ -1049,7 +1071,7 @@ function addZwembad(): void {
     $d = input();
     if (empty($d['name'])) respond(['error' => 'Naam vereist'], 400);
 
-    $code  = nextCode('P', 'zwembaden', 'code');
+    $code  = randomCode('P', 'zwembaden', 'code');
     $token = bin2hex(random_bytes(16));
 
     $st = db()->prepare("INSERT INTO zwembaden
@@ -1144,7 +1166,7 @@ function loadDemoData(): void {
 
     // Demo zwembad
     try {
-        $code  = nextCode('P', 'zwembaden', 'code');
+        $code  = randomCode('P', 'zwembaden', 'code');
         $token = bin2hex(random_bytes(16));
         db()->prepare("INSERT INTO zwembaden (code, name, owner_name, email, address, pool_type, volume_liters, qr_token, public_visible)
             VALUES (?,?,?,?,?,?,?,?,1)")
@@ -1157,7 +1179,7 @@ function loadDemoData(): void {
 
     // Demo monteur
     try {
-        $code  = nextCode('U', 'users', 'code');
+        $code  = randomCode('U', 'users', 'code');
         $token = bin2hex(random_bytes(16));
         db()->prepare("INSERT INTO users (code, name, email, magic_token, roles) VALUES (?,?,?,?,?)")
             ->execute([$code, 'Demo Monteur', 'demo@example.com', $token, 'user']);
@@ -1168,4 +1190,205 @@ function loadDemoData(): void {
     }
 
     respond(['success' => true, 'results' => $results]);
+}
+
+// ============================================================
+// AUTH HELPER
+// ============================================================
+function requireUserAuth(array $d): array {
+    $token = trim($d['user_token'] ?? $d['magic_token'] ?? '');
+    $code  = strtoupper(trim($d['user_code'] ?? ''));
+    if ($token) {
+        $st = db()->prepare("SELECT id,code,name,email,phone,roles FROM users WHERE magic_token=? AND active=1");
+        $st->execute([$token]);
+    } elseif ($code) {
+        $st = db()->prepare("SELECT id,code,name,email,phone,roles FROM users WHERE code=? AND active=1");
+        $st->execute([$code]);
+    } else {
+        respond(['error' => 'Authenticatie vereist (user_token of user_code)'], 401);
+    }
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$u) respond(['error' => 'Gebruiker niet gevonden of inactief'], 401);
+    return $u;
+}
+
+// ============================================================
+// PUBLIEK: REGISTREREN
+// ============================================================
+function register(): void {
+    $d    = input();
+    $name = trim($d['name'] ?? '');
+    if (strlen($name) < 2) respond(['error' => 'Naam vereist (minimaal 2 tekens)'], 400);
+
+    $code  = randomCode('U', 'users', 'code');
+    $token = bin2hex(random_bytes(16));
+
+    $st = db()->prepare("INSERT INTO users (code,name,email,phone,magic_token,roles) VALUES (?,?,?,?,?,'user')");
+    $st->execute([$code, $name, $d['email'] ?? '', $d['phone'] ?? '', $token]);
+    $id = (int)db()->lastInsertId();
+
+    respond(['success' => true, 'user_code' => $code, 'magic_token' => $token, 'user_id' => $id]);
+}
+
+// ============================================================
+// PUBLIEK: INLOGGEN MET GEBRUIKERSCODE
+// ============================================================
+function loginUserCode(): void {
+    $d    = input();
+    $code = strtoupper(trim($d['user_code'] ?? ''));
+    if (!$code) respond(['error' => 'user_code vereist'], 400);
+
+    $st = db()->prepare("SELECT id,code,name,email,phone,roles,magic_token FROM users WHERE code=? AND active=1");
+    $st->execute([$code]);
+    $u = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$u) respond(['error' => 'Gebruikerscode niet gevonden'], 404);
+
+    $st2 = db()->prepare(
+        "SELECT z.id,z.code,z.name,z.address,z.qr_token,uz.role
+         FROM zwembaden z JOIN user_zwembaden uz ON uz.zwembad_id=z.id
+         WHERE uz.user_id=? AND z.active=1 ORDER BY z.name"
+    );
+    $st2->execute([$u['id']]);
+    $pools = $st2->fetchAll(PDO::FETCH_ASSOC);
+
+    respond([
+        'user'        => ['id' => $u['id'], 'code' => $u['code'], 'name' => $u['name'], 'roles' => $u['roles']],
+        'pools'       => $pools,
+        'magic_token' => $u['magic_token'],
+    ]);
+}
+
+// ============================================================
+// GEBRUIKER: ZWEMBAD TOEVOEGEN (wordt eigenaar)
+// ============================================================
+function addMyPool(): void {
+    $d = input();
+    $u = requireUserAuth($d);
+    if (empty($d['name'])) respond(['error' => 'Naam vereist'], 400);
+
+    $code  = randomCode('P', 'zwembaden', 'code');
+    $token = bin2hex(random_bytes(16));
+
+    $st = db()->prepare(
+        "INSERT INTO zwembaden (code,name,owner_name,email,phone,address,pool_type,volume_liters,notes,qr_token,public_visible,owner_id)
+         VALUES (?,?,?,?,?,?,?,?,?,?,0,?)"
+    );
+    $st->execute([
+        $code, $d['name'], $u['name'], $d['email'] ?? '', $d['phone'] ?? '',
+        $d['address'] ?? '', $d['pool_type'] ?? 'Privé buitenbad',
+        (int)($d['volume_liters'] ?? 40000), $d['notes'] ?? '',
+        $token, $u['id'],
+    ]);
+    $id = (int)db()->lastInsertId();
+
+    db()->prepare(
+        "INSERT INTO user_zwembaden (user_id,zwembad_id,role) VALUES (?,?,'owner')
+         ON DUPLICATE KEY UPDATE role='owner'"
+    )->execute([$u['id'], $id]);
+
+    $baseUrl = getMeta('base_url', '') ?: ((!empty($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST']);
+    respond(['success' => true, 'id' => $id, 'code' => $code, 'qr_token' => $token, 'qr_url' => $baseUrl . '/?k=' . $token]);
+}
+
+// ============================================================
+// EIGENAAR: UITNODIGING AANMAKEN
+// ============================================================
+function createInvite(): void {
+    $d = input();
+    $u = requireUserAuth($d);
+    $zwembadId = (int)($d['zwembad_id'] ?? 0);
+    if (!$zwembadId) respond(['error' => 'zwembad_id vereist'], 400);
+
+    $st = db()->prepare("SELECT role FROM user_zwembaden WHERE user_id=? AND zwembad_id=?");
+    $st->execute([$u['id'], $zwembadId]);
+    $role = $st->fetchColumn();
+    if ($role !== 'owner') respond(['error' => 'Alleen de eigenaar kan uitnodigingen aanmaken'], 403);
+
+    $invRole = in_array($d['role'] ?? '', ['technician', 'viewer']) ? $d['role'] : 'technician';
+    $token   = bin2hex(random_bytes(16));
+    $expires = date('Y-m-d H:i:s', strtotime('+7 days'));
+
+    db()->prepare(
+        "INSERT INTO pool_invites (token,zwembad_id,invited_by,role,expires_at) VALUES (?,?,?,?,?)"
+    )->execute([$token, $zwembadId, $u['id'], $invRole, $expires]);
+
+    $baseUrl = getMeta('base_url', '') ?: ((!empty($_SERVER['HTTPS']) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST']);
+    respond(['success' => true, 'invite_url' => $baseUrl . '/?invite=' . $token, 'expires_at' => $expires, 'role' => $invRole]);
+}
+
+// ============================================================
+// PUBLIEK: UITNODIGING ACCEPTEREN
+// ============================================================
+function acceptInvite(): void {
+    $d     = input();
+    $token = trim($d['invite_token'] ?? '');
+    if (!$token) respond(['error' => 'invite_token vereist'], 400);
+
+    $st = db()->prepare("SELECT * FROM pool_invites WHERE token=? AND used_at IS NULL AND expires_at > NOW()");
+    $st->execute([$token]);
+    $inv = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$inv) respond(['error' => 'Uitnodiging is ongeldig of verlopen'], 404);
+
+    // Bestaande gebruiker via code, of nieuwe registratie
+    if (!empty($d['user_code'])) {
+        $st2 = db()->prepare("SELECT id,code,name,roles,magic_token FROM users WHERE code=? AND active=1");
+        $st2->execute([strtoupper(trim($d['user_code']))]);
+        $u = $st2->fetch(PDO::FETCH_ASSOC);
+        if (!$u) respond(['error' => 'Gebruikerscode niet gevonden'], 404);
+    } elseif (!empty($d['name'])) {
+        $uCode  = randomCode('U', 'users', 'code');
+        $uToken = bin2hex(random_bytes(16));
+        $st2 = db()->prepare("INSERT INTO users (code,name,email,phone,magic_token,roles) VALUES (?,?,?,?,?,'user')");
+        $st2->execute([$uCode, trim($d['name']), $d['email'] ?? '', $d['phone'] ?? '', $uToken]);
+        $uid = (int)db()->lastInsertId();
+        $u = ['id' => $uid, 'code' => $uCode, 'name' => trim($d['name']), 'roles' => 'user', 'magic_token' => $uToken];
+    } else {
+        respond(['error' => 'Geef naam (nieuw) of user_code (bestaand) op'], 400);
+    }
+
+    db()->prepare(
+        "INSERT INTO user_zwembaden (user_id,zwembad_id,role) VALUES (?,?,?)
+         ON DUPLICATE KEY UPDATE role=VALUES(role)"
+    )->execute([$u['id'], $inv['zwembad_id'], $inv['role']]);
+
+    db()->prepare("UPDATE pool_invites SET used_at=NOW() WHERE token=?")->execute([$token]);
+
+    $pool = db()->prepare("SELECT id,code,name,qr_token,address FROM zwembaden WHERE id=?");
+    $pool->execute([$inv['zwembad_id']]);
+
+    respond([
+        'success'     => true,
+        'user_code'   => $u['code'],
+        'magic_token' => $u['magic_token'] ?? null,
+        'pool'        => $pool->fetch(PDO::FETCH_ASSOC),
+        'role'        => $inv['role'],
+    ]);
+}
+
+// ============================================================
+// EIGENAAR: EIGENAARSCHAP OVERDRAGEN
+// ============================================================
+function transferOwnership(): void {
+    $d = input();
+    $u = requireUserAuth($d);
+    $zwembadId   = (int)($d['zwembad_id'] ?? 0);
+    $newOwnerId  = (int)($d['new_owner_user_id'] ?? 0);
+    if (!$zwembadId || !$newOwnerId) respond(['error' => 'zwembad_id en new_owner_user_id vereist'], 400);
+
+    $st = db()->prepare("SELECT role FROM user_zwembaden WHERE user_id=? AND zwembad_id=?");
+    $st->execute([$u['id'], $zwembadId]);
+    if ($st->fetchColumn() !== 'owner') respond(['error' => 'Alleen eigenaar kan eigenaarschap overdragen'], 403);
+
+    // Bestaande eigenaar wordt technician
+    db()->prepare("UPDATE user_zwembaden SET role='technician' WHERE user_id=? AND zwembad_id=?")
+        ->execute([$u['id'], $zwembadId]);
+    // Nieuwe eigenaar (voeg toe of upgrade)
+    db()->prepare(
+        "INSERT INTO user_zwembaden (user_id,zwembad_id,role) VALUES (?,?,'owner')
+         ON DUPLICATE KEY UPDATE role='owner'"
+    )->execute([$newOwnerId, $zwembadId]);
+    // Update owner_id kolom
+    db()->prepare("UPDATE zwembaden SET owner_id=? WHERE id=?")->execute([$newOwnerId, $zwembadId]);
+
+    respond(['success' => true]);
 }
