@@ -530,79 +530,32 @@ function aiStrip(): void {
     $prompt = <<<'PROMPT'
 You are analyzing a pool water test strip photo.
 
-═══ STEP 1: FIND THE TEST STRIP ═══
-The test strip is a narrow white plastic stick (~3–8% of image width) with:
-  • 4 small colored square reaction pads in a row
-  • One HANDLE end: plain white plastic, no pad, longer blank section
+Find and return bounding boxes for exactly 5 things. Do NOT interpret colors or give values.
 
-ORIENTATION RULE:
-  The HANDLE is the bottom end (longer white section, no color).
-  Count pads from the handle upward (or outward):
-    pad 1 nearest handle  = STABILIZER
-    pad 2                 = TOTAL ALKALINITY
-    pad 3                 = FREE CHLORINE
-    pad 4 farthest handle = pH (END PAD)
-  The strip may be at any angle or position — search the entire image.
+1. THE STRIP
+   A narrow white plastic stick (~3–8% of image width) with 4 small colored pads
+   and a plain white handle end (longer blank section, no pad).
+   → "strip_bbox": tight box around the ENTIRE strip (all pads + handle included)
 
-Output:
-  strip_bbox: tight box around the ENTIRE strip (all pads + handle)
-  For each pad: pad_bbox covering ONLY that single pad square
+2. FOUR COLOR CHART ROWS on the Aquachek bottle
+   The bottle may be upright, rotated 90°, or upside down.
+   Identify each row by its printed text label:
+   → "ph_row":       the "pH (END PAD)" row — 5 colored squares
+   → "chlorine_row": the "ppm FREE CHLORINE" row — 6 colored squares
+   → "alk_row":      the "ppm TOTAL ALKALINITY" row — 6 colored squares
+   → "stab_row":     the "ppm STABILIZER (PAD NEAREST HANDLE)" row — 5 colored squares
 
-═══ STEP 2: FIND THE REFERENCE CHART ═══
-The Aquachek reference chart is printed on the bottle. The bottle may be upright,
-rotated 90°, or upside down — use the printed text labels to determine orientation.
-Labels to find: "pH (END PAD)", "ppm FREE CHLORINE", "ppm TOTAL ALKALINITY",
-                "ppm STABILIZER (PAD NEAREST HANDLE)"
+   Each row bbox must cover ONLY the colored squares — not text labels, not arrows.
 
-For each of the 4 parameters, find its row (or column) of color cells and return
-EACH CELL as a separate entry with its printed numeric value:
-  pH:         5 cells — 6.2  6.8  7.2  7.8  8.4
-  Chlorine:   6 cells — 0  0.5  1  3  5  10
-  Alkalinity: 6 cells — 0  40  80  120  180  240
-  Stabilizer: 5 cells — 0  30-50  100  150  300  (use value 40 for the 30-50 cell)
-
-For each cell give a tight bbox covering ONLY that color square (not labels, not gaps).
-Then compare the pad color to all cells in that parameter's row and pick the closest match.
-
-═══ OUTPUT — valid JSON only, no markdown ═══
+Return ONLY valid JSON, no markdown, no explanation:
 {
-  "strip_bbox": [x1,y1,x2,y2],
-  "ph":         { "value": 6.8, "pad_bbox": [x1,y1,x2,y2],
-                  "ref_cells": [
-                    {"v":6.2,"bbox":[x1,y1,x2,y2]},
-                    {"v":6.8,"bbox":[x1,y1,x2,y2]},
-                    {"v":7.2,"bbox":[x1,y1,x2,y2]},
-                    {"v":7.8,"bbox":[x1,y1,x2,y2]},
-                    {"v":8.4,"bbox":[x1,y1,x2,y2]}
-                  ] },
-  "chlorine":   { "value": 3.0, "pad_bbox": [x1,y1,x2,y2],
-                  "ref_cells": [
-                    {"v":0,  "bbox":[x1,y1,x2,y2]},
-                    {"v":0.5,"bbox":[x1,y1,x2,y2]},
-                    {"v":1,  "bbox":[x1,y1,x2,y2]},
-                    {"v":3,  "bbox":[x1,y1,x2,y2]},
-                    {"v":5,  "bbox":[x1,y1,x2,y2]},
-                    {"v":10, "bbox":[x1,y1,x2,y2]}
-                  ] },
-  "alkalinity": { "value": 40, "pad_bbox": [x1,y1,x2,y2],
-                  "ref_cells": [
-                    {"v":0,  "bbox":[x1,y1,x2,y2]},
-                    {"v":40, "bbox":[x1,y1,x2,y2]},
-                    {"v":80, "bbox":[x1,y1,x2,y2]},
-                    {"v":120,"bbox":[x1,y1,x2,y2]},
-                    {"v":180,"bbox":[x1,y1,x2,y2]},
-                    {"v":240,"bbox":[x1,y1,x2,y2]}
-                  ] },
-  "stabilizer": { "value": 40, "pad_bbox": [x1,y1,x2,y2],
-                  "ref_cells": [
-                    {"v":0,  "bbox":[x1,y1,x2,y2]},
-                    {"v":40, "bbox":[x1,y1,x2,y2]},
-                    {"v":100,"bbox":[x1,y1,x2,y2]},
-                    {"v":150,"bbox":[x1,y1,x2,y2]},
-                    {"v":300,"bbox":[x1,y1,x2,y2]}
-                  ] }
+  "strip_bbox":   [x1,y1,x2,y2],
+  "ph_row":       [x1,y1,x2,y2],
+  "chlorine_row": [x1,y1,x2,y2],
+  "alk_row":      [x1,y1,x2,y2],
+  "stab_row":     [x1,y1,x2,y2]
 }
-All bbox values: % of FULL image dimensions (0–100), x1<x2, y1<y2.
+All values are % of the FULL image dimensions (0–100). x1<x2, y1<y2.
 PROMPT;
 
     $payload = json_encode([
@@ -637,21 +590,12 @@ PROMPT;
     $v = json_decode($m[0], true);
     if (!$v) respond(['error' => 'Ongeldige AI response'], 422);
 
-    // Valideer en saniteer waarden
     respond([
-        'strip_bbox' => $v['strip_bbox'] ?? null,
-        'ph'        => ['value'     => min(9,   max(6,   round((float)($v['ph']['value']         ?? 6.2), 1))),
-                        'pad_bbox'  => $v['ph']['pad_bbox']    ?? null,
-                        'ref_cells' => $v['ph']['ref_cells']   ?? []],
-        'chlorine'  => ['value'     => min(10,  max(0,   round((float)($v['chlorine']['value']   ?? 0),   1))),
-                        'pad_bbox'  => $v['chlorine']['pad_bbox']    ?? null,
-                        'ref_cells' => $v['chlorine']['ref_cells']   ?? []],
-        'alkalinity'=> ['value'     => min(300, max(0,   (int)($v['alkalinity']['value']         ?? 0))),
-                        'pad_bbox'  => $v['alkalinity']['pad_bbox']  ?? null,
-                        'ref_cells' => $v['alkalinity']['ref_cells'] ?? []],
-        'stabilizer'=> ['value'     => min(300, max(0,   (int)($v['stabilizer']['value']         ?? 0))),
-                        'pad_bbox'  => $v['stabilizer']['pad_bbox']  ?? null,
-                        'ref_cells' => $v['stabilizer']['ref_cells'] ?? []],
+        'strip_bbox'   => $v['strip_bbox']   ?? null,
+        'ph_row'       => $v['ph_row']       ?? null,
+        'chlorine_row' => $v['chlorine_row'] ?? null,
+        'alk_row'      => $v['alk_row']      ?? null,
+        'stab_row'     => $v['stab_row']     ?? null,
     ]);
 }
 

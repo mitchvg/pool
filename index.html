@@ -396,23 +396,98 @@ function paramCard(p) {
   </div>`;
 }
 
-function applyAIToSliders(d) {
+function applyAI(d) {
+  AI_RESULT = d;
+  if (!AI_IMG?.complete || !d.strip_bbox) return;
   document.getElementById('ai-badge').style.display = 'inline';
-  PARAMS.forEach(p => {
-    const r = d[p.key];
-    if (!r) return;
-    const v = r.value;
-    const sl = document.getElementById('sl-' + p.key);
-    if (sl) sl.value = v;
-    const vd = document.getElementById('vv-' + p.key);
-    if (vd) vd.textContent = v.toFixed(p.dec);
-    setVal(p.fid, v.toFixed(p.dec));
-    const rz = document.getElementById('rz-' + p.key);
-    if (rz) rz.textContent = r.reasoning || '';
-    const pw = document.getElementById('pw-' + p.key);
+
+  const iw = AI_IMG.naturalWidth, ih = AI_IMG.naturalHeight;
+
+  // Werk canvas op volledige resolutie
+  const wc = document.createElement('canvas');
+  wc.width = iw; wc.height = ih;
+  const wCtx = wc.getContext('2d');
+  wCtx.drawImage(AI_IMG, 0, 0);
+
+  function toBBox([x1,y1,x2,y2]) {
+    return { x:x1/100*iw, y:y1/100*ih, w:(x2-x1)/100*iw, h:(y2-y1)/100*ih };
+  }
+  function avgRgb(x, y, w, h) {
+    x=Math.round(Math.max(0,x)); y=Math.round(Math.max(0,y));
+    w=Math.max(1,Math.round(w)); h=Math.max(1,Math.round(h));
+    const data = wCtx.getImageData(x,y,w,h).data;
+    let r=0,g=0,b=0,n=0;
+    for(let i=0;i<data.length;i+=4){r+=data[i];g+=data[i+1];b+=data[i+2];n++;}
+    return {r:Math.round(r/n),g:Math.round(g/n),b:Math.round(b/n)};
+  }
+  function hexRgb(h){return{r:parseInt(h.slice(1,3),16),g:parseInt(h.slice(3,5),16),b:parseInt(h.slice(5,7),16)};}
+  function rgbDist(a,b){return Math.sqrt((a.r-b.r)**2+(a.g-b.g)**2+(a.b-b.b)**2);}
+
+  // Strip → 4 gelijke pads (onderkant = handgreep = stabilizer, bovenkant = pH)
+  const PAD_ORDER = ['stabilizer','alkalinity','chlorine','ph'];
+  const ROW_KEYS  = {ph:'ph_row', chlorine:'chlorine_row', alkalinity:'alk_row', stabilizer:'stab_row'};
+
+  const sb   = toBBox(d.strip_bbox);
+  const padH = sb.h / 4;
+
+  PAD_ORDER.forEach((key, i) => {
+    const p    = PARAMS.find(x => x.key === key);
+    // i=0 = onderkant (stabilizer), i=3 = bovenkant (pH)
+    const padY = sb.y + sb.h - (i+1)*padH;
+    const padRgb = avgRgb(sb.x, padY, sb.w, padH);
+
+    // Toon pad-crop
+    cropCanvasRect('cp-'+key, sb.x, padY, sb.w, padH);
+    const pw = document.getElementById('pw-'+key);
     if (pw) pw.style.display = 'block';
+
+    // Referentierij → N gelijke cellen, kleurafstand meten
+    const rowBbox = d[ROW_KEYS[key]];
+    let bestIdx = 0, bestDist = Infinity;
+
+    if (rowBbox) {
+      const rb       = toBBox(rowBbox);
+      const n        = p.cells.length;
+      const vertical = rb.h > rb.w; // rij verticaal (fles 90° gedraaid)?
+      const cw = vertical ? rb.w   : rb.w/n;
+      const ch = vertical ? rb.h/n : rb.h;
+
+      p.cells.forEach((_, ci) => {
+        const cx = vertical ? rb.x         : rb.x + ci*cw;
+        const cy = vertical ? rb.y + ci*ch : rb.y;
+        // Cel uit FOTO croppen (zelfde belichting als pad)
+        cropCanvasRect('crc-'+key+'-'+ci, cx, cy, cw, ch);
+        // Gemiddelde RGB van deze referentiecel uit de foto
+        const refRgb = avgRgb(cx, cy, cw, ch);
+        const dist = rgbDist(padRgb, refRgb);
+        if (dist < bestDist) { bestDist=dist; bestIdx=ci; }
+        const cv = document.getElementById('crc-'+key+'-'+ci);
+        if (cv) cv.style.border = '2px solid transparent';
+      });
+
+      const rw = document.getElementById('rw-'+key);
+      if (rw) rw.style.display = 'flex';
+    } else {
+      // Fallback: vergelijk met hardgecodeerde PARAMS kleuren
+      p.cells.forEach((cell, ci) => {
+        const dist = rgbDist(padRgb, hexRgb(cell.c));
+        if (dist < bestDist) { bestDist=dist; bestIdx=ci; }
+      });
+    }
+
+    // Groene rand op best-matching cel
+    const bestCv = document.getElementById('crc-'+key+'-'+bestIdx);
+    if (bestCv) bestCv.style.border = '2px solid var(--g)';
+
+    // Slider + waarde instellen
+    const value = p.cells[bestIdx].v;
+    const sl = document.getElementById('sl-'+key);
+    if (sl) sl.value = value;
+    const vd = document.getElementById('vv-'+key);
+    if (vd) vd.textContent = typeof value==='number' ? value.toFixed(p.dec) : String(value);
+    setVal(p.fid, typeof value==='number' ? value.toFixed(p.dec) : String(value));
   });
-  PARAMS.forEach(p => doCrop(p.key));
+
   showAdvice();
 }
 
@@ -439,7 +514,7 @@ async function onStripPhoto(input) {
     await new Promise(r => { AI_IMG.onload = r; AI_IMG.onerror = r; });
 
     status.innerHTML = '';
-    applyAIToSliders(d);
+    applyAI(d);
   } catch(e) {
     inner.innerHTML  = `<div style="color:var(--bad);font-size:13px">Analyseren mislukt: ${esc(e.message)}</div>`;
     status.innerHTML = '';
@@ -457,49 +532,15 @@ function onSlider(key, dec, fid) {
   window._adviceTimer = setTimeout(showAdvice, 700);
 }
 
-function doCrop(key) {
-  if (!AI_IMG?.complete || !AI_RESULT) return;
-  const r = AI_RESULT[key];
-  if (!r) return;
-
-  if (r.pad_bbox) {
-    cropCanvas('cp-' + key, r.pad_bbox);
-    const pw = document.getElementById('pw-' + key);
-    if (pw) pw.style.display = 'block';
-  }
-
-  if (r.ref_cells?.length) {
-    const val = r.value ?? 0;
-    let bestIdx = 0, bestDist = Infinity;
-    r.ref_cells.forEach((c, i) => {
-      const d = Math.abs(c.v - val);
-      if (d < bestDist) { bestDist = d; bestIdx = i; }
-    });
-
-    r.ref_cells.forEach((cell, i) => {
-      cropCanvas('crc-' + key + '-' + i, cell.bbox);
-      const cv = document.getElementById('crc-' + key + '-' + i);
-      if (cv) {
-        cv.style.border = (i === bestIdx) ? '2px solid var(--g)' : '2px solid transparent';
-        cv.title = cell.v;
-      }
-    });
-
-    const rw = document.getElementById('rw-' + key);
-    if (rw) rw.style.display = 'flex';
-  }
-}
-
-function cropCanvas(id, bbox) {
+function cropCanvasRect(id, x, y, w, h) {
   const c = document.getElementById(id);
-  if (!c || !bbox || !AI_IMG) return;
-  const iw = AI_IMG.naturalWidth, ih = AI_IMG.naturalHeight;
-  const x1 = bbox[0]/100*iw, y1 = bbox[1]/100*ih;
-  const bw = Math.max(1,(bbox[2]-bbox[0])/100*iw);
-  const bh = Math.max(1,(bbox[3]-bbox[1])/100*ih);
+  if (!c || !AI_IMG) return;
   const ctx = c.getContext('2d');
-  ctx.clearRect(0,0,c.width,c.height);
-  ctx.drawImage(AI_IMG, x1, y1, bw, bh, 0, 0, c.width, c.height);
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.drawImage(AI_IMG,
+    Math.round(x), Math.round(y),
+    Math.max(1, Math.round(w)), Math.max(1, Math.round(h)),
+    0, 0, c.width, c.height);
 }
 
 // ── Extra foto's ──────────────────────────────────────────────
